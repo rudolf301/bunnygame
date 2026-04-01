@@ -273,6 +273,9 @@ class GameScene extends Phaser.Scene {
     // Half-heart pickup (spawns every 20s when score >= 100)
     this.heartPickupTimer = 0;
 
+    // Hard mode flag (score >= 200)
+    this.hardModeAnnounced = false;
+
     // ---- ABILITY HOTBAR (keys 1-4) ----
     this.abilityDefs = [
       { label: '1', icon: '❄️', name: 'Freeze', maxCd: 20000, duration: 5000 },
@@ -989,10 +992,14 @@ class GameScene extends Phaser.Scene {
         this.freezeTimer = ab.duration;
         SFX.freeze();
         this.spawnBurst(this.scale.width / 2, this.scale.height / 2, 0x74b9ff, 30);
-        this.addPopup(this.bunny.x, this.bunny.y - 45, '❄️ FREEZE!', '#74b9ff');
-        showToast('❄️ All chickens frozen!');
+        if (this.score >= 200) {
+          this.addPopup(this.bunny.x, this.bunny.y - 45, '❄️ RESIST!', '#74b9ff');
+          showToast('❄️ Chickens resist! Only slowed 70%!');
+        } else {
+          this.addPopup(this.bunny.x, this.bunny.y - 45, '❄️ FREEZE!', '#74b9ff');
+          showToast('❄️ All chickens frozen!');
+        }
         this.shakeScreen(120);
-        // Visual: tint whole screen blue briefly
         this.cameras.main.flash(200, 100, 180, 255, false);
         break;
 
@@ -1016,14 +1023,22 @@ class GameScene extends Phaser.Scene {
 
       case 3: { // 💣 BLAST
         SFX.blast();
-        // Screen-wide explosion effect
         this.cameras.main.flash(300, 255, 100, 50, false);
         this.shakeScreen(500);
         this.spawnBurst(this.bunny.x, this.bunny.y, 0xff6b6b, 35);
         this.spawnBurst(this.bunny.x, this.bunny.y, 0xffd700, 20);
 
+        const hardMode = this.score >= 200;
+        // Hard mode: only kills chickens within 200px radius
+        const blastRadius = hardMode ? 200 : Infinity;
         let kills = 0;
-        const toKill = this.chickens.getChildren().filter(c => c.active);
+        const toKill = this.chickens.getChildren().filter(c => {
+          if (!c.active) return false;
+          if (hardMode) {
+            return Phaser.Math.Distance.Between(this.bunny.x, this.bunny.y, c.x, c.y) <= blastRadius;
+          }
+          return true;
+        });
         toKill.forEach(c => {
           for (let i = 0; i < 3; i++) this.spawnBurst(c.x, c.y, 0xe74c3c, 6);
           c.destroy();
@@ -1034,11 +1049,15 @@ class GameScene extends Phaser.Scene {
           const pts = kills * 3 * this.comboMultiplier;
           this.score += pts;
           this.addPopup(this.bunny.x, this.bunny.y - 50, `💣 BLAST! +${pts}`, '#ff6b6b');
-          showToast(`💣 BLAST! ${kills} chickens destroyed! +${pts} pts`);
+          if (hardMode) {
+            showToast(`💣 BLAST! ${kills} nearby chickens destroyed! +${pts} pts`);
+          } else {
+            showToast(`💣 BLAST! ${kills} chickens destroyed! +${pts} pts`);
+          }
           this.updateHUD();
         } else {
-          this.addPopup(this.bunny.x, this.bunny.y - 50, '💣 BLAST!', '#ff6b6b');
-          showToast('💣 BLAST!');
+          this.addPopup(this.bunny.x, this.bunny.y - 50, hardMode ? '💣 BLAST! (range only!)' : '💣 BLAST!', '#ff6b6b');
+          showToast(hardMode ? '💣 BLAST! No chickens in range!' : '💣 BLAST!');
         }
         break;
       }
@@ -1254,6 +1273,15 @@ class GameScene extends Phaser.Scene {
       }
     }
 
+    // ---- HARD MODE TRIGGER (score >= 200) ----
+    if (this.score >= 200 && !this.hardModeAnnounced) {
+      this.hardModeAnnounced = true;
+      showToast('⚠️ HARD MODE! Chickens resist abilities!');
+      this.cameras.main.flash(500, 255, 40, 40, false);
+      this.shakeScreen(400);
+      this.addPopup(this.bunny.x, this.bunny.y - 60, '⚠️ HARD MODE!', '#e74c3c');
+    }
+
     // ---- ABILITY KEYS (1-4) ----
     for (let i = 0; i < 4; i++) {
       if (Phaser.Input.Keyboard.JustDown(this.abilityKeys[i])) {
@@ -1345,14 +1373,22 @@ class GameScene extends Phaser.Scene {
 
     // ---- CHICKENS CHASE (with separation so they spread out) ----
     const frozen = this.freezeTimer > 0;
+    const hardMode = this.score >= 200;
     const allChickens = this.chickens.getChildren();
     allChickens.forEach((c, idx) => {
       if (frozen) {
-        c.setVelocity(0, 0);
-        c.setTint(0x74b9ff);
-        return;
+        if (hardMode) {
+          // Hard mode: chickens resist freeze - only 30% speed, tinted blue-ish
+          c.setTint(0xa8d8ff);
+          // still chase but very slow — handled below with a slowFactor
+        } else {
+          c.setVelocity(0, 0);
+          c.setTint(0x74b9ff);
+          return;
+        }
+      } else {
+        c.clearTint();
       }
-      c.clearTint();
 
       // Direction toward bunny
       let dx = this.bunny.x - c.x;
@@ -1376,11 +1412,18 @@ class GameScene extends Phaser.Scene {
       // Wobble per-chicken so they don't move identically
       const wobble = Math.sin(time * 0.003 + idx * 2.5) * 0.25;
 
+      // Hard mode: score ramps up chicken base speed (+8 per 200 pts, max +60)
+      const scoreSpeedBonus = hardMode ? Math.min(60, Math.floor(this.score / 200) * 8) : 0;
+
+      // Freeze in hard mode = 30% speed only
+      const freezeSlow = (frozen && hardMode) ? 0.3 : 1.0;
+
       // Combine: chase + separation + wobble
       const chaseX = dx / d;
       const chaseY = dy / d;
-      const finalX = (chaseX + sepX * 0.6 + wobble * chaseY) * c.speed;
-      const finalY = (chaseY + sepY * 0.6 - wobble * chaseX) * c.speed;
+      const spd = (c.speed + scoreSpeedBonus) * freezeSlow;
+      const finalX = (chaseX + sepX * 0.6 + wobble * chaseY) * spd;
+      const finalY = (chaseY + sepY * 0.6 - wobble * chaseX) * spd;
 
       c.setVelocity(finalX, finalY);
       c.setFlipX(dx < 0);
@@ -1413,13 +1456,15 @@ class GameScene extends Phaser.Scene {
     while (this.eggs.countActive() < maxEggs) this.spawnEgg();
 
     // Chickens: cooldown-based, scales slower, hard cap
-    // Max chickens scales: level 1-3: 3, level 4-6: 5, level 7+: 7
-    const dynamicMaxChickens = Math.min(3 + Math.floor(this.level / 2), this.maxChickens);
+    // Max chickens: level + score bonus, hard capped
+    const scoreChickenBonus = Math.floor(this.score / 300); // +1 chicken per 300 score
+    const dynamicMaxChickens = Math.min(3 + Math.floor(this.level / 2) + scoreChickenBonus, this.maxChickens);
     this.chickenSpawnCooldown -= delta;
     if (this.chickenSpawnCooldown <= 0 && this.chickens.countActive() < dynamicMaxChickens) {
-      // Cooldown: 10s at level 1, minimum 5s at high levels
-      const minCooldown = Math.max(5000, 10000 - this.level * 600);
-      this.chickenSpawnCooldown = minCooldown + Math.random() * 4000;
+      // Cooldown shrinks with level AND score (min 3s in hard mode, 5s normal)
+      const scoreSpeedUp = Math.min(2000, Math.floor(this.score / 100) * 200);
+      const minCooldown = Math.max(this.score >= 200 ? 3000 : 5000, 10000 - this.level * 600 - scoreSpeedUp);
+      this.chickenSpawnCooldown = minCooldown + Math.random() * 3000;
       this.spawnChickenWithWarning();
     }
 
