@@ -1,0 +1,7 @@
+node_modules/
+highscores.db
+highscores.db-shm
+highscores.db-wal
+.env
+*.log
+.DS_Store

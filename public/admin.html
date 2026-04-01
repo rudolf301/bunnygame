@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="bs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐰 Zec Admin Panel</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0f172a;
+    --surface:  #1e293b;
+    --surface2: #273549;
+    --border:   #334155;
+    --text:     #e2e8f0;
+    --muted:    #94a3b8;
+    --accent:   #6366f1;
+    --green:    #22c55e;
+    --red:      #ef4444;
+    --yellow:   #f59e0b;
+    --blue:     #3b82f6;
+    --cyan:     #06b6d4;
+    --pink:     #ec4899;
+  }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ─── LOGIN OVERLAY ─── */
+  #loginOverlay {
+    position: fixed; inset: 0;
+    background: rgba(15,23,42,0.97);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000;
+  }
+  #loginOverlay.hidden { display: none; }
+
+  .login-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2.5rem 3rem;
+    text-align: center;
+    width: min(380px, 92vw);
+    box-shadow: 0 25px 60px rgba(0,0,0,0.5);
+  }
+  .login-box h1 { font-size: 2rem; margin-bottom: .4rem; }
+  .login-box p  { color: var(--muted); margin-bottom: 1.8rem; font-size: .9rem; }
+  .login-box input {
+    width: 100%;
+    padding: .75rem 1rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 1rem;
+    margin-bottom: 1rem;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .login-box input:focus { border-color: var(--accent); }
+  .login-box button {
+    width: 100%;
+    padding: .75rem;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity .2s, transform .1s;
+  }
+  .login-box button:hover { opacity: .9; }
+  .login-box button:active { transform: scale(.98); }
+  .login-error { color: var(--red); font-size: .85rem; margin-top: .7rem; min-height: 1.2em; }
+
+  /* ─── LAYOUT ─── */
+  #dashboard { max-width: 1400px; margin: 0 auto; padding: 1.5rem; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 1rem;
+    margin-bottom: 1.8rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .header-left h1 { font-size: 1.5rem; display: flex; align-items: center; gap: .5rem; }
+  .header-left p  { color: var(--muted); font-size: .85rem; margin-top: .2rem; }
+
+  .header-actions { display: flex; gap: .7rem; align-items: center; }
+
+  .live-badge {
+    display: flex; align-items: center; gap: .4rem;
+    background: rgba(34,197,94,.12);
+    border: 1px solid rgba(34,197,94,.3);
+    color: var(--green);
+    padding: .35rem .85rem;
+    border-radius: 20px;
+    font-size: .82rem;
+    font-weight: 600;
+  }
+  .live-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green);
+    animation: blink 1.4s ease infinite;
+  }
+  @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:.3; } }
+
+  .btn {
+    padding: .45rem 1.1rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    font-size: .85rem;
+    cursor: pointer;
+    transition: background .2s;
+  }
+  .btn:hover { background: var(--border); }
+  .btn-danger { background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.4); color: var(--red); }
+  .btn-danger:hover { background: rgba(239,68,68,.25); }
+
+  /* ─── TABS ─── */
+  .tabs {
+    display: flex; gap: .4rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0;
+  }
+  .tab-btn {
+    padding: .55rem 1.2rem;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: .9rem;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color .2s, border-color .2s;
+    border-radius: 6px 6px 0 0;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+
+  /* ─── STAT CARDS ─── */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.2rem 1rem;
+    text-align: center;
+  }
+  .card-icon { font-size: 1.5rem; margin-bottom: .4rem; }
+  .card-val  { font-size: 1.8rem; font-weight: 800; line-height: 1; margin-bottom: .3rem; }
+  .card-label{ font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .card.green .card-val { color: var(--green); }
+  .card.blue  .card-val { color: var(--blue); }
+  .card.yellow.card-val { color: var(--yellow); }
+  .card.pink  .card-val { color: var(--pink); }
+  .card.cyan  .card-val { color: var(--cyan); }
+  .card.accent.card-val { color: var(--accent); }
+
+  /* ─── GRID 2-COL ─── */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin-bottom: 1.5rem; }
+  @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+
+  /* ─── PANEL ─── */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .panel-head {
+    padding: .9rem 1.2rem;
+    border-bottom: 1px solid var(--border);
+    font-weight: 700;
+    font-size: .95rem;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .panel-body { padding: 1rem 1.2rem; }
+
+  /* ─── TABLE ─── */
+  .data-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  .data-table th {
+    text-align: left; padding: .55rem .8rem;
+    color: var(--muted); font-weight: 600; font-size: .75rem;
+    text-transform: uppercase; letter-spacing: .05em;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+  .data-table td { padding: .55rem .8rem; border-bottom: 1px solid rgba(51,65,85,.5); }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr:hover td { background: rgba(99,102,241,.05); }
+  .data-table .rank-1 td:first-child { color: #ffd700; }
+  .data-table .rank-2 td:first-child { color: #c0c0c0; }
+  .data-table .rank-3 td:first-child { color: #cd7f32; }
+
+  .badge {
+    display: inline-block;
+    padding: .15rem .55rem;
+    border-radius: 10px;
+    font-size: .72rem;
+    font-weight: 700;
+  }
+  .badge-solo  { background: rgba(99,102,241,.2); color: #818cf8; }
+  .badge-multi { background: rgba(34,197,94,.2);  color: #4ade80; }
+
+  .score-val { font-weight: 700; color: var(--yellow); }
+  .level-val { color: var(--cyan); }
+
+  /* ─── CHART ─── */
+  .chart-wrap { position: relative; height: 220px; }
+
+  /* ─── LIVE ROOMS ─── */
+  .room-list { display: flex; flex-direction: column; gap: .6rem; }
+  .room-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: .65rem 1rem;
+    background: var(--surface2);
+    border-radius: 8px;
+    font-size: .88rem;
+  }
+  .room-code  { font-weight: 700; font-family: monospace; letter-spacing: .1em; color: var(--accent); }
+  .room-state { font-size: .75rem; padding: .15rem .55rem; border-radius: 10px; }
+  .room-state.playing { background: rgba(34,197,94,.2); color: var(--green); }
+  .room-state.waiting { background: rgba(245,158,11,.2); color: var(--yellow); }
+  .no-rooms   { color: var(--muted); text-align: center; padding: 1.5rem; font-size: .9rem; }
+
+  /* ─── SEARCH ─── */
+  .search-row {
+    display: flex; gap: .7rem; margin-bottom: 1.2rem;
+  }
+  .search-row input {
+    flex: 1;
+    padding: .65rem 1rem;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: .95rem;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .search-row input:focus { border-color: var(--accent); }
+  .search-row button {
+    padding: .65rem 1.4rem;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: .9rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity .2s;
+  }
+  .search-row button:hover { opacity: .85; }
+
+  .player-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: .8rem;
+    margin-bottom: 1.2rem;
+  }
+
+  /* ─── SCROLL TABLE ─── */
+  .table-scroll { overflow-x: auto; max-height: 400px; overflow-y: auto; }
+  .table-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+  .table-scroll::-webkit-scrollbar-track { background: var(--surface); }
+  .table-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ─── SPINNER ─── */
+  .spinner {
+    display: inline-block;
+    width: 20px; height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading { display: flex; align-items: center; gap: .7rem; color: var(--muted); padding: 2rem; justify-content: center; }
+
+  /* ─── MISC ─── */
+  .muted  { color: var(--muted); }
+  .danger { color: var(--red); }
+  .success{ color: var(--green); }
+  .mb1    { margin-bottom: 1rem; }
+  .mb15   { margin-bottom: 1.5rem; }
+
+  .refresh-time {
+    font-size: .75rem; color: var(--muted);
+    margin-top: .4rem;
+  }
+</style>
+</head>
+<body>
+
+<!-- ══ LOGIN OVERLAY ══ -->
+<div id="loginOverlay">
+  <div class="login-box">
+    <h1>🐰 Admin</h1>
+    <p>Unesite admin lozinku za pristup panelu</p>
+    <input type="password" id="keyInput" placeholder="Lozinka..." autocomplete="off">
+    <button onclick="tryLogin()">Prijavi se</button>
+    <div class="login-error" id="loginErr"></div>
+  </div>
+</div>
+
+<!-- ══ DASHBOARD ══ -->
+<div id="dashboard">
+  <header>
+    <div class="header-left">
+      <h1>🐰 Zec Admin Panel</h1>
+      <p class="refresh-time" id="lastRefresh">Učitavanje...</p>
+    </div>
+    <div class="header-actions">
+      <div class="live-badge" id="liveBadge">
+        <div class="live-dot"></div>
+        <span id="onlineCount">–</span> online
+      </div>
+      <button class="btn" onclick="loadAll()">↺ Osvježi</button>
+      <button class="btn btn-danger" onclick="logout()">Odjava</button>
+    </div>
+  </header>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('overview', this)">📊 Pregled</button>
+    <button class="tab-btn" onclick="switchTab('players', this)">🏆 Igrači</button>
+    <button class="tab-btn" onclick="switchTab('games', this)">📋 Igre</button>
+    <button class="tab-btn" onclick="switchTab('live', this)">🟢 Live</button>
+    <button class="tab-btn" onclick="switchTab('search', this)">🔍 Pretraga</button>
+  </div>
+
+  <!-- ══ TAB: OVERVIEW ══ -->
+  <div class="tab-pane active" id="tab-overview">
+    <div class="cards" id="overviewCards">
+      <div class="loading"><div class="spinner"></div> Učitavam...</div>
+    </div>
+
+    <div class="grid2">
+      <!-- Daily chart -->
+      <div class="panel">
+        <div class="panel-head">📈 Igre po danu (zadnjih 14 dana)</div>
+        <div class="panel-body">
+          <div class="chart-wrap"><canvas id="dailyChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Mode distribution -->
+      <div class="panel">
+        <div class="panel-head">🎮 Raspodjela modova</div>
+        <div class="panel-body">
+          <div class="chart-wrap"><canvas id="modeChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ TAB: PLAYERS ══ -->
+  <div class="tab-pane" id="tab-players">
+    <div class="panel">
+      <div class="panel-head">🏆 Top 25 igrača (po best score-u)</div>
+      <div class="table-scroll">
+        <table class="data-table" id="topTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Ime</th>
+              <th>Best Score</th>
+              <th>Igara</th>
+              <th>Max Nivo</th>
+              <th>Zadnja igra</th>
+            </tr>
+          </thead>
+          <tbody id="topBody">
+            <tr><td colspan="6" class="loading"><div class="spinner"></div> Učitavam...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ TAB: GAMES ══ -->
+  <div class="tab-pane" id="tab-games">
+    <div class="panel">
+      <div class="panel-head">
+        📋 Zadnje igre
+        <span class="muted" style="font-size:.8rem;font-weight:400" id="recentCount"></span>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Igrač</th>
+              <th>Score</th>
+              <th>Nivo</th>
+              <th>Mod</th>
+              <th>Datum</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="recentBody">
+            <tr><td colspan="7" class="loading"><div class="spinner"></div> Učitavam...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ TAB: LIVE ══ -->
+  <div class="tab-pane" id="tab-live">
+    <div class="cards">
+      <div class="card green">
+        <div class="card-icon">🟢</div>
+        <div class="card-val" id="liveOnline">–</div>
+        <div class="card-label">Online igrača</div>
+      </div>
+      <div class="card blue">
+        <div class="card-icon">🏠</div>
+        <div class="card-val" id="liveRooms">–</div>
+        <div class="card-label">Aktivnih soba</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        🏠 Aktivne sobe
+        <button class="btn" style="font-size:.8rem;padding:.3rem .8rem" onclick="loadLive()">↺</button>
+      </div>
+      <div class="panel-body">
+        <div class="room-list" id="roomList">
+          <div class="no-rooms">Nema aktivnih soba</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ TAB: SEARCH ══ -->
+  <div class="tab-pane" id="tab-search">
+    <div class="panel mb15">
+      <div class="panel-head">🔍 Pretraga igrača</div>
+      <div class="panel-body">
+        <div class="search-row">
+          <input type="text" id="searchInput" placeholder="Unesite ime igrača..."
+                 onkeydown="if(event.key==='Enter')searchPlayer()">
+          <button onclick="searchPlayer()">Pretraži</button>
+        </div>
+        <div id="searchResult"></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end #dashboard -->
+
+<script>
+// ── AUTH ──────────────────────────────────────────────────────
+let adminKey = sessionStorage.getItem('adminKey') || '';
+let dailyChart = null, modeChart = null;
+
+async function tryLogin() {
+  const key = document.getElementById('keyInput').value.trim();
+  if (!key) return;
+  const r = await fetch(`/api/admin/overview?key=${encodeURIComponent(key)}`);
+  if (r.ok) {
+    adminKey = key;
+    sessionStorage.setItem('adminKey', key);
+    document.getElementById('loginOverlay').classList.add('hidden');
+    loadAll();
+  } else {
+    document.getElementById('loginErr').textContent = '❌ Pogrešna lozinka!';
+  }
+}
+
+function logout() {
+  sessionStorage.removeItem('adminKey');
+  adminKey = '';
+  document.getElementById('loginOverlay').classList.remove('hidden');
+  document.getElementById('keyInput').value = '';
+  document.getElementById('loginErr').textContent = '';
+}
+
+function api(path) {
+  return fetch(`${path}?key=${encodeURIComponent(adminKey)}`).then(r => {
+    if (r.status === 401) { logout(); throw new Error('Unauthorized'); }
+    return r.json();
+  });
+}
+
+// ── TABS ─────────────────────────────────────────────────────
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+  // Lazy load
+  if (name === 'players') loadTop();
+  if (name === 'games')   loadRecent();
+  if (name === 'live')    loadLive();
+}
+
+// ── FORMAT ───────────────────────────────────────────────────
+function fmtDate(s) {
+  if (!s) return '–';
+  const d = new Date(s.replace(' ', 'T') + (s.includes('T') ? '' : 'Z'));
+  return d.toLocaleDateString('bs', { day:'2-digit', month:'2-digit', year:'numeric' })
+       + ' ' + d.toLocaleTimeString('bs', { hour:'2-digit', minute:'2-digit' });
+}
+function fmtNum(n) {
+  if (n == null) return '–';
+  return Number(n).toLocaleString('bs');
+}
+
+// ── OVERVIEW ─────────────────────────────────────────────────
+async function loadOverview() {
+  const [ov, daily] = await Promise.all([api('/api/admin/overview'), api('/api/admin/daily')]);
+
+  document.getElementById('onlineCount').textContent = ov.onlinePlayers ?? 0;
+  document.getElementById('liveOnline').textContent = ov.onlinePlayers ?? 0;
+  document.getElementById('liveRooms').textContent  = ov.activeRooms ?? 0;
+
+  const cardDefs = [
+    { icon:'🎮', label:'Ukupno igara',     val: fmtNum(ov.totalGames),   cls:'blue'   },
+    { icon:'👥', label:'Jedinstveni igrači',val: fmtNum(ov.uniquePlayers), cls:'green'  },
+    { icon:'🏆', label:'Rekord',           val: fmtNum(ov.highestScore), cls:'yellow' },
+    { icon:'📊', label:'Prosjek',          val: fmtNum(ov.avgScore),     cls:'cyan'   },
+    { icon:'⭐', label:'Max nivo',         val: ov.highestLevel ?? '–',  cls:'pink'   },
+    { icon:'📅', label:'Danas',            val: fmtNum(ov.todayGames),   cls:'accent' },
+    { icon:'🎮', label:'Solo igre',        val: fmtNum(ov.soloGames),    cls:''       },
+    { icon:'👥', label:'Multi igre',       val: fmtNum(ov.multiGames),   cls:''       },
+  ];
+
+  document.getElementById('overviewCards').innerHTML = cardDefs.map(c => `
+    <div class="card ${c.cls}">
+      <div class="card-icon">${c.icon}</div>
+      <div class="card-val">${c.val}</div>
+      <div class="card-label">${c.label}</div>
+    </div>`).join('');
+
+  // Daily chart
+  buildDailyChart(daily);
+
+  // Mode chart
+  buildModeChart(ov.soloGames ?? 0, ov.multiGames ?? 0);
+
+  document.getElementById('lastRefresh').textContent =
+    'Osvježeno: ' + new Date().toLocaleTimeString('bs', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+}
+
+function buildDailyChart(rows) {
+  const ctx = document.getElementById('dailyChart');
+  if (!ctx) return;
+  if (dailyChart) dailyChart.destroy();
+
+  // Fill all 14 days (including missing days with 0)
+  const today = new Date();
+  const labels = [], gamesData = [], playersData = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0,10);
+    const row = rows.find(r => r.day === key);
+    labels.push(d.toLocaleDateString('bs', { day:'2-digit', month:'2-digit' }));
+    gamesData.push(row ? row.games : 0);
+    playersData.push(row ? row.players : 0);
+  }
+
+  dailyChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Igre',
+          data: gamesData,
+          backgroundColor: 'rgba(99,102,241,0.7)',
+          borderRadius: 4,
+          order: 2,
+        },
+        {
+          label: 'Igrači',
+          data: playersData,
+          type: 'line',
+          borderColor: '#22c55e',
+          backgroundColor: 'rgba(34,197,94,0.1)',
+          borderWidth: 2,
+          pointRadius: 3,
+          fill: true,
+          tension: 0.4,
+          order: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#94a3b8', boxWidth: 12, font: { size: 11 } } } },
+      scales: {
+        x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: 'rgba(51,65,85,.4)' } },
+        y: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: 'rgba(51,65,85,.4)' }, beginAtZero: true },
+      },
+    },
+  });
+}
+
+function buildModeChart(solo, multi) {
+  const ctx = document.getElementById('modeChart');
+  if (!ctx) return;
+  if (modeChart) modeChart.destroy();
+  modeChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Solo', 'Multiplayer'],
+      datasets: [{
+        data: [solo || 0, multi || 0],
+        backgroundColor: ['rgba(99,102,241,0.8)', 'rgba(34,197,94,0.8)'],
+        borderColor: ['#6366f1', '#22c55e'],
+        borderWidth: 2,
+        hoverOffset: 6,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#94a3b8', padding: 16, font: { size: 12 } } },
+      },
+    },
+  });
+}
+
+// ── TOP PLAYERS ───────────────────────────────────────────────
+async function loadTop() {
+  const rows = await api('/api/admin/top?limit=25');
+  const medals = ['🥇','🥈','🥉'];
+  document.getElementById('topBody').innerHTML = rows.map((r, i) => `
+    <tr class="${i < 3 ? 'rank-'+(i+1) : ''}">
+      <td>${medals[i] || (i+1)}</td>
+      <td><strong>${esc(r.name)}</strong></td>
+      <td class="score-val">${fmtNum(r.bestScore)}</td>
+      <td>${r.games}</td>
+      <td class="level-val">Lv${r.bestLevel}</td>
+      <td class="muted" style="font-size:.8rem">${fmtDate(r.lastPlayed)}</td>
+    </tr>`).join('') || '<tr><td colspan="6" class="muted" style="padding:1rem;text-align:center">Nema podataka</td></tr>';
+}
+
+// ── RECENT GAMES ─────────────────────────────────────────────
+async function loadRecent() {
+  const rows = await api('/api/admin/recent?limit=50');
+  document.getElementById('recentCount').textContent = `(${rows.length} zadnjih)`;
+  document.getElementById('recentBody').innerHTML = rows.map(r => `
+    <tr>
+      <td class="muted">#${r.id}</td>
+      <td><strong>${esc(r.name)}</strong></td>
+      <td class="score-val">${fmtNum(r.score)}</td>
+      <td class="level-val">Lv${r.level}</td>
+      <td><span class="badge badge-${r.mode}">${r.mode}</span></td>
+      <td class="muted" style="font-size:.8rem">${fmtDate(r.created_at)}</td>
+      <td>
+        <button class="btn btn-danger" style="font-size:.75rem;padding:.2rem .6rem"
+                onclick="deleteScore(${r.id}, this)">✕</button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="7" class="muted" style="padding:1rem;text-align:center">Nema podataka</td></tr>';
+}
+
+async function deleteScore(id, btn) {
+  if (!confirm(`Obrisati zapis #${id}?`)) return;
+  const r = await fetch(`/api/admin/score/${id}?key=${encodeURIComponent(adminKey)}`, { method: 'DELETE' });
+  if (r.ok) { btn.closest('tr').remove(); }
+  else alert('Greška pri brisanju!');
+}
+
+// ── LIVE ─────────────────────────────────────────────────────
+async function loadLive() {
+  const data = await api('/api/admin/live');
+  document.getElementById('liveOnline').textContent = data.onlinePlayers ?? 0;
+  document.getElementById('liveRooms').textContent  = data.activeRooms ?? 0;
+  document.getElementById('onlineCount').textContent = data.onlinePlayers ?? 0;
+
+  const list = document.getElementById('roomList');
+  if (!data.rooms || data.rooms.length === 0) {
+    list.innerHTML = '<div class="no-rooms">🏠 Nema aktivnih soba trenutno</div>';
+    return;
+  }
+  list.innerHTML = data.rooms.map(rm => `
+    <div class="room-item">
+      <div>
+        <span class="room-code">${rm.code}</span>
+        &nbsp;
+        <span class="room-state ${rm.state}">${rm.state === 'playing' ? '▶ U igri' : '⏳ Čeka'}</span>
+        &nbsp;
+        <span class="badge badge-${rm.mode}">${rm.mode}</span>
+      </div>
+      <div class="muted" style="font-size:.82rem">${rm.players.map(esc).join(' vs ')}</div>
+    </div>`).join('');
+}
+
+// ── PLAYER SEARCH ─────────────────────────────────────────────
+async function searchPlayer() {
+  const name = document.getElementById('searchInput').value.trim();
+  if (!name) return;
+  const el = document.getElementById('searchResult');
+  el.innerHTML = '<div class="loading"><div class="spinner"></div> Pretražujem...</div>';
+
+  const data = await api(`/api/admin/player/${encodeURIComponent(name)}`);
+  if (!data.stats || !data.stats.totalGames) {
+    el.innerHTML = `<p class="muted" style="padding:.5rem 0">Igrač "<strong>${esc(name)}</strong>" nije pronađen.</p>`;
+    return;
+  }
+  const s = data.stats;
+  el.innerHTML = `
+    <div class="player-cards mb1">
+      <div class="card green">
+        <div class="card-icon">🎮</div>
+        <div class="card-val">${s.totalGames}</div>
+        <div class="card-label">Igara</div>
+      </div>
+      <div class="card yellow">
+        <div class="card-icon">🏆</div>
+        <div class="card-val">${fmtNum(s.bestScore)}</div>
+        <div class="card-label">Best score</div>
+      </div>
+      <div class="card cyan">
+        <div class="card-icon">📊</div>
+        <div class="card-val">${fmtNum(s.avgScore)}</div>
+        <div class="card-label">Prosjek</div>
+      </div>
+      <div class="card pink">
+        <div class="card-icon">⭐</div>
+        <div class="card-val">Lv${s.bestLevel}</div>
+        <div class="card-label">Max nivo</div>
+      </div>
+    </div>
+    <p class="muted" style="font-size:.8rem;margin-bottom:.8rem">
+      Prva igra: <strong>${fmtDate(s.firstGame)}</strong> &nbsp;|&nbsp;
+      Zadnja: <strong>${fmtDate(s.lastGame)}</strong>
+    </p>
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead>
+          <tr><th>#</th><th>Score</th><th>Nivo</th><th>Mod</th><th>Datum</th></tr>
+        </thead>
+        <tbody>
+          ${data.games.map((g,i) => `
+            <tr>
+              <td class="muted">${i+1}</td>
+              <td class="score-val">${fmtNum(g.score)}</td>
+              <td class="level-val">Lv${g.level}</td>
+              <td><span class="badge badge-${g.mode}">${g.mode}</span></td>
+              <td class="muted" style="font-size:.8rem">${fmtDate(g.created_at)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+// ── UTIL ─────────────────────────────────────────────────────
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function loadAll() {
+  await Promise.all([loadOverview()]);
+}
+
+// ── BOOT ─────────────────────────────────────────────────────
+if (adminKey) {
+  // Test stored key
+  fetch(`/api/admin/overview?key=${encodeURIComponent(adminKey)}`)
+    .then(r => {
+      if (r.ok) {
+        document.getElementById('loginOverlay').classList.add('hidden');
+        loadAll();
+      } else {
+        adminKey = '';
+        sessionStorage.removeItem('adminKey');
+      }
+    });
+}
+
+// Auto-refresh live badge every 15s
+setInterval(() => {
+  if (!adminKey) return;
+  api('/api/admin/live').then(d => {
+    document.getElementById('onlineCount').textContent = d.onlinePlayers ?? 0;
+  }).catch(() => {});
+}, 15000);
+
+// Enter key on login
+document.getElementById('keyInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') tryLogin();
+});
+</script>
+</body>
+</html>

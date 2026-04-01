@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Bunny Egg Hunt!</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+</head>
+<body>
+
+  <div class="bg-decoration" id="bgDeco"></div>
+  <div class="toast" id="toast"></div>
+
+  <!-- ==================== MENU ==================== -->
+  <div id="menu-screen">
+    <div class="menu-hero">
+      <canvas id="heroCanvas" width="700" height="280"></canvas>
+      <h1 class="game-title">Bunny Egg Hunt!</h1>
+      <p class="game-subtitle">An Easter adventure for one or two players</p>
+    </div>
+
+    <div class="menu-panels">
+      <!-- LEFT: Game controls -->
+      <div class="card menu-card">
+        <div class="menu-section">
+          <label class="input-label">Your name</label>
+          <input type="text" class="name-input" id="playerName" placeholder="Enter name..." maxlength="12">
+        </div>
+
+        <div class="menu-divider"></div>
+
+        <div class="menu-section">
+          <h3 class="section-title">Choose mode</h3>
+          <div class="btn-group">
+            <button class="btn btn-primary btn-large" id="btnSingle">
+              <span class="btn-icon">🎮</span>
+              <span class="btn-text">
+                <strong>Solo Play</strong>
+                <small>Play alone</small>
+              </span>
+            </button>
+            <button class="btn btn-secondary btn-large" id="btnCreateRoom">
+              <span class="btn-icon">👥</span>
+              <span class="btn-text">
+                <strong>Create Room</strong>
+                <small>Invite a friend</small>
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <div class="menu-divider"></div>
+
+        <div class="menu-section">
+          <h3 class="section-title">Join a room</h3>
+          <div class="input-group">
+            <input type="text" id="roomCodeInput" placeholder="Enter room code" maxlength="5">
+            <button class="btn btn-success btn-small" id="btnJoinRoom">Go!</button>
+          </div>
+          <p class="error-msg" id="roomError"></p>
+        </div>
+      </div>
+
+      <!-- RIGHT: Leaderboard -->
+      <div class="card leaderboard-card">
+        <div class="lb-header">
+          <h2>🏆 Leaderboard</h2>
+          <div class="lb-tabs">
+            <button class="lb-tab active" data-mode="all">All</button>
+            <button class="lb-tab" data-mode="solo">Solo</button>
+            <button class="lb-tab" data-mode="multi">Multi</button>
+          </div>
+        </div>
+        <div id="leaderboardList" class="lb-list">
+          <p class="lb-empty">No scores yet. Be the first!</p>
+        </div>
+        <div class="lb-stats" id="lbStats"></div>
+      </div>
+    </div>
+
+    <!-- MUSIC CREDIT -->
+    <div class="music-credit">
+      🎵 Music: <strong>Aetheric - Coconut Kind of Love</strong>
+      <br><a href="https://freetouse.com" target="_blank" rel="noopener">freetouse.com</a> (Free to use)
+    </div>
+
+    <!-- MUSIC TOGGLE -->
+    <div class="music-toggle" id="musicToggle">
+      <button class="btn-circle" id="btnMusic" title="Music">🔇</button>
+    </div>
+  </div>
+
+  <!-- ==================== LOBBY ==================== -->
+  <div id="lobby-screen" class="hidden">
+    <div class="card">
+      <h2>👥 Multiplayer Room</h2>
+      <p>Share this code with your friend:</p>
+      <div class="room-code" id="roomCodeDisplay">-----</div>
+      <ul class="player-list" id="playerList"></ul>
+
+      <!-- MODE SELECTOR (shown when 2 players) -->
+      <div id="modeSelector" style="display:none;">
+        <h3 class="section-title" style="margin-top:0.8rem;">Choose mode</h3>
+        <div class="btn-group">
+          <button class="btn btn-primary btn-small mode-btn active" data-mode="classic" id="modeClassic">🥚 Egg Race</button>
+          <button class="btn btn-secondary btn-small mode-btn" data-mode="versus" id="modeVersus">🐰vs🐔 Bunny vs Chicken</button>
+        </div>
+        <p id="modeDesc" style="font-size:0.8rem;color:#636e72;margin-top:0.5rem;">Both collect eggs - whoever gets more wins!</p>
+      </div>
+
+      <p class="waiting-text" id="waitingText">Waiting for another player...</p>
+      <div class="btn-group">
+        <button class="btn btn-success" id="btnReady" style="display:none;">I'm Ready!</button>
+        <button class="btn btn-warning btn-small" id="btnLeave">Leave Room</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== GAME ==================== -->
+  <div id="game-screen" class="hidden">
+    <div id="phaser-game"></div>
+    <div class="game-hud">
+      <div class="hud-item">
+        <span>🥚</span>
+        <span id="hudScore">0</span>
+      </div>
+      <div class="hud-item hud-hearts" id="hudHearts"></div>
+      <div class="hud-item">
+        <span>Level</span>
+        <span id="hudLevel">1</span>
+      </div>
+    </div>
+    <div class="shield-indicator" id="shieldIndicator">🥕 SHIELD ACTIVE!</div>
+    <div class="carrot-progress" id="carrotProgress">
+      <span>🥕</span>
+      <span id="carrotText">0/5</span>
+      <div class="carrot-bar"><div class="carrot-bar-fill" id="carrotBarFill"></div></div>
+    </div>
+    <div class="mp-scores" id="mpScores" style="display:none;"></div>
+
+    <!-- ABILITY BAR -->
+    <div class="ability-bar" id="abilityBar">
+      <div class="ability-slot" id="ab0">
+        <div class="ability-cd-overlay" id="abCd0"></div>
+        <div class="ability-icon">❄️</div>
+        <div class="ability-key">1</div>
+        <div class="ability-timer" id="abTimer0"></div>
+        <div class="ability-label">Freeze</div>
+      </div>
+      <div class="ability-slot" id="ab1">
+        <div class="ability-cd-overlay" id="abCd1"></div>
+        <div class="ability-icon">🥕</div>
+        <div class="ability-key">2</div>
+        <div class="ability-timer" id="abTimer1"></div>
+        <div class="ability-label">Shield</div>
+      </div>
+      <div class="ability-slot" id="ab2">
+        <div class="ability-cd-overlay" id="abCd2"></div>
+        <div class="ability-icon">⚡</div>
+        <div class="ability-key">3</div>
+        <div class="ability-timer" id="abTimer2"></div>
+        <div class="ability-label">Turbo</div>
+      </div>
+      <div class="ability-slot" id="ab3">
+        <div class="ability-cd-overlay" id="abCd3"></div>
+        <div class="ability-icon">💣</div>
+        <div class="ability-key">4</div>
+        <div class="ability-timer" id="abTimer3"></div>
+        <div class="ability-label">Blast</div>
+      </div>
+    </div>
+
+    <!-- TUTORIAL OVERLAY -->
+    <div id="tutorial-overlay" class="tutorial-overlay hidden">
+      <div class="tutorial-card">
+        <h2>How to Play</h2>
+        <div class="tutorial-grid">
+          <div class="tutorial-item">
+            <div class="tutorial-icon">⬆️⬇️⬅️➡️</div>
+            <div class="tutorial-label">Arrows or WASD to move</div>
+          </div>
+          <div class="tutorial-item">
+            <div class="tutorial-icon">🥚</div>
+            <div class="tutorial-label">Collect eggs for points</div>
+          </div>
+          <div class="tutorial-item">
+            <div class="tutorial-icon">🐔</div>
+            <div class="tutorial-label">Avoid angry chickens!</div>
+          </div>
+          <div class="tutorial-item">
+            <div class="tutorial-icon">🥕</div>
+            <div class="tutorial-label">Carrot gives shield - crush chickens!</div>
+          </div>
+          <div class="tutorial-item">
+            <div class="tutorial-icon">🌟</div>
+            <div class="tutorial-label">Golden egg = 10 points!</div>
+          </div>
+          <div class="tutorial-item">
+            <div class="tutorial-icon">1️⃣2️⃣3️⃣4️⃣</div>
+            <div class="tutorial-label">Keys 1-4: Freeze, Shield, Turbo, Blast!</div>
+          </div>
+          <div class="tutorial-item">
+            <div class="tutorial-icon">🔥</div>
+            <div class="tutorial-label">Collect fast for COMBO bonus!</div>
+          </div>
+          <div class="tutorial-item">
+            <div class="tutorial-icon">❤️❤️❤️</div>
+            <div class="tutorial-label">You have 3 lives - protect them!</div>
+          </div>
+        </div>
+        <button class="btn btn-primary tutorial-start" id="btnTutorialStart">Start Game!</button>
+        <label class="tutorial-check">
+          <input type="checkbox" id="skipTutorial"> Don't show again
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== GAME OVER ==================== -->
+  <div id="gameover-screen" class="hidden">
+    <div class="gameover-card">
+      <h1 id="goTitle">Game Over!</h1>
+      <p class="final-score" id="goScore">0</p>
+      <p>eggs collected</p>
+      <p class="final-level" id="goLevel">Level 1</p>
+      <div id="goRank" class="go-rank"></div>
+      <div id="goMultiplayer"></div>
+      <div class="btn-group">
+        <button class="btn btn-primary" id="btnRestart">Play Again</button>
+        <button class="btn btn-warning btn-small" id="btnMenu">Back to Menu</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="bunny-draw.js"></script>
+  <script src="hero-scene.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="versus.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
