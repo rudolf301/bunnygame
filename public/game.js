@@ -440,6 +440,9 @@ class GameScene extends Phaser.Scene {
       this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.FOUR),
     ];
 
+    // ---- MOBILE TOUCH: ability tap handlers ----
+    this.setupMobileControls();
+
     // Spawn initial eggs
     for (let i = 0; i < 5; i++) this.spawnEgg();
     this.spawnChickenWithWarning();
@@ -966,6 +969,93 @@ class GameScene extends Phaser.Scene {
   }
 
   // ============================================================
+  //  MOBILE CONTROLS
+  // ============================================================
+  setupMobileControls() {
+    const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    if (!isTouchDevice) return;
+
+    // ---- Joystick ----
+    this.touchDir = { x: 0, y: 0 };
+    this.joystickActive = false;
+
+    const joystickEl = document.getElementById('mobileJoystick');
+    const base = document.getElementById('joystickBase');
+    const knob = document.getElementById('joystickKnob');
+    if (!base || !knob) return;
+
+    const maxDist = 50; // max knob travel in px
+
+    const getCenter = () => {
+      const r = base.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    };
+
+    const moveKnob = (tx, ty) => {
+      const c = getCenter();
+      let dx = tx - c.x;
+      let dy = ty - c.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      if (dist > maxDist) { dx = dx / dist * maxDist; dy = dy / dist * maxDist; }
+      knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+      // Normalize to -1..1
+      this.touchDir.x = dx / maxDist;
+      this.touchDir.y = dy / maxDist;
+    };
+
+    const resetKnob = () => {
+      knob.style.transform = 'translate(-50%, -50%)';
+      this.touchDir.x = 0;
+      this.touchDir.y = 0;
+      this.joystickActive = false;
+    };
+
+    base.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      this.joystickActive = true;
+      const t = e.touches[0];
+      moveKnob(t.clientX, t.clientY);
+    }, { passive: false });
+
+    base.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (!this.joystickActive) return;
+      const t = e.touches[0];
+      moveKnob(t.clientX, t.clientY);
+    }, { passive: false });
+
+    base.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      resetKnob();
+    }, { passive: false });
+
+    base.addEventListener('touchcancel', (e) => {
+      resetKnob();
+    });
+
+    // ---- Ability tap handlers ----
+    const scene = this;
+    for (let i = 0; i < 4; i++) {
+      const slot = document.getElementById('ab' + i);
+      if (!slot) continue;
+      slot.style.pointerEvents = 'auto';
+      slot.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        scene.useAbility(i);
+      }, { passive: false });
+    }
+
+    // ---- Prevent page scroll/zoom on game area ----
+    const gameScreen = document.getElementById('game-screen');
+    gameScreen.addEventListener('touchmove', (e) => {
+      // Only prevent on the game area, not on UI
+      if (e.target.closest('.ability-slot') || e.target.closest('.joystick-base')) return;
+      e.preventDefault();
+    }, { passive: false });
+  }
+
+  // ============================================================
   //  ABILITY HOTBAR
   // ============================================================
   useAbility(idx) {
@@ -1251,6 +1341,19 @@ class GameScene extends Phaser.Scene {
     if (this.cursors.up.isDown || this.wasd.up.isDown) vy = -speed;
     if (this.cursors.down.isDown || this.wasd.down.isDown) vy = speed;
 
+    // Mobile joystick input (adds to keyboard, whichever is active)
+    if (this.touchDir && (this.touchDir.x !== 0 || this.touchDir.y !== 0)) {
+      const deadzone = 0.15;
+      const tx = Math.abs(this.touchDir.x) > deadzone ? this.touchDir.x : 0;
+      const ty = Math.abs(this.touchDir.y) > deadzone ? this.touchDir.y : 0;
+      if (tx !== 0 || ty !== 0) {
+        vx = tx * speed;
+        vy = ty * speed;
+        if (tx < -deadzone) this.bunny.dir = -1;
+        else if (tx > deadzone) this.bunny.dir = 1;
+      }
+    }
+
     if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707; }
     this.bunny.setVelocity(vx, vy);
     this.bunny.setFlipX(this.bunny.dir === -1);
@@ -1527,6 +1630,7 @@ function startGame() {
       default: 'arcade',
       arcade: { debug: false },
     },
+    input: { touch: { capture: false } },
     scene: [GameScene],
     fps: {
       target: 60,
