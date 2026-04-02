@@ -662,8 +662,8 @@ class GameScene extends Phaser.Scene {
   // ============================================================
   spawnEgg() {
     const W = this.scale.width, H = this.scale.height;
-    const x = Phaser.Math.Between(40, W - 40);
-    const y = Phaser.Math.Between(60, H - 60);
+    const x = Phaser.Math.Between(70, W - 70);
+    const y = Phaser.Math.Between(80, H - 80);
     const colorIdx = Phaser.Math.Between(0, EGG_COLORS.length - 1);
 
     const egg = this.physics.add.sprite(x, y, this.eggTextureKeys[colorIdx]);
