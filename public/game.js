@@ -1599,16 +1599,7 @@ class GameScene extends Phaser.Scene {
     this.bunny.setVelocity(vx, vy);
     this.bunny.setFlipX(this.bunny.dir === -1);
 
-    // ---- DEV CHEAT: P = +200 score, L = next level ----
-    if (Phaser.Input.Keyboard.JustDown(this.input.keyboard.addKey('P'))) {
-      this.score += 200; this.updateHUD(); showToast('🧪 +200 score (cheat)');
-    }
-    if (Phaser.Input.Keyboard.JustDown(this.input.keyboard.addKey('L'))) {
-      this.level++; this.applyLevelTheme(); this.updateHUD();
-      showToast(`🧪 Level ${this.level} (cheat)`);
-    }
-
-    // ---- TIMERS ----
+// ---- TIMERS ----
     if (this.invTimer > 0) this.invTimer -= delta;
     if (this.shieldTimer > 0) {
       this.shieldTimer -= delta;
