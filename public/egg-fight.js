@@ -6,9 +6,8 @@ class EggFightScene extends Phaser.Scene {
   constructor() { super('EggFightScene'); }
 
   init(data) {
-    // Data can come from scene start or from game registry
-    const reg = this.registry ? this.registry.get('eggFightData') : null;
-    const d = data && data.myName ? data : (reg || {});
+    // Read from global set by startEggFight()
+    const d = window._eggFightData || data || {};
     this.myName    = d.myName    || 'Player 1';
     this.oppName   = d.oppName   || 'Player 2';
     this.playerIdx = d.playerIndex || 0;
@@ -64,7 +63,7 @@ class EggFightScene extends Phaser.Scene {
     this.drawEgg(this.myEggGfx,  this.myEggX,  this.myEggY,  this.myEggColor,  1, this.myCracks);
     this.drawEgg(this.oppEggGfx, this.oppEggX, this.oppEggY, this.oppEggColor, 1, this.oppCracks);
 
-    // Names
+    // Names under eggs
     this.add.text(this.myEggX,  this.myEggY + 85, '⬇ ' + this.myName, {
       fontFamily: 'Nunito', fontSize: '18px', fontStyle: 'bold',
       color: '#c8a2ff', stroke: '#000', strokeThickness: 3,
@@ -114,6 +113,22 @@ class EggFightScene extends Phaser.Scene {
   }
 
   // ============================================================
+  //  STAR DRAWING HELPER (manual — fillStar doesn't exist)
+  // ============================================================
+  drawStar(gfx, cx, cy, points, outerR, innerR) {
+    gfx.beginPath();
+    for (let i = 0; i < points * 2; i++) {
+      const angle = (i * Math.PI) / points - Math.PI / 2;
+      const r = i % 2 === 0 ? outerR : innerR;
+      const px = cx + Math.cos(angle) * r;
+      const py = cy + Math.sin(angle) * r;
+      if (i === 0) gfx.moveTo(px, py); else gfx.lineTo(px, py);
+    }
+    gfx.closePath();
+    gfx.fillPath();
+  }
+
+  // ============================================================
   //  EGG DRAWING (decorative Easter egg with optional cracks)
   // ============================================================
   drawEgg(gfx, cx, cy, baseColor, scale, cracks) {
@@ -153,10 +168,10 @@ class EggFightScene extends Phaser.Scene {
     }
     gfx.strokePath();
 
-    // Stars
+    // Stars (drawn manually)
     gfx.fillStyle(0xffd700, 0.25);
-    gfx.fillStar(cx - 10, cy - h * 0.25, 5, 6, 3);
-    gfx.fillStar(cx + 14, cy - h * 0.18, 5, 5, 2.5);
+    this.drawStar(gfx, cx - 10, cy - h * 0.25, 5, 6, 3);
+    this.drawStar(gfx, cx + 14, cy - h * 0.18, 5, 5, 2.5);
 
     // Cracks
     if (cracks.length > 0) {
@@ -244,6 +259,10 @@ class EggFightScene extends Phaser.Scene {
   //  SOCKET
   // ============================================================
   setupSocket() {
+    // Clean up any old listeners first
+    socket.off('egg-fight-result');
+    socket.off('egg-fight-over');
+
     socket.on('egg-fight-result', (data) => this.showCollision(data));
     socket.on('egg-fight-over',   (data) => {
       this.time.delayedCall(2200, () => {
@@ -366,7 +385,7 @@ class EggFightScene extends Phaser.Scene {
       this.barGfx.fillStyle(0x2d3436, 0.85);
       this.barGfx.fillRoundedRect(this.barX - 4, this.barY - 4, this.barW + 8, this.barH + 8, 8);
 
-      // Gradient segments (red → green → red)
+      // Gradient segments (red -> green -> red)
       const segs = 24;
       const sw = this.barW / segs;
       for (let i = 0; i < segs; i++) {

@@ -2222,6 +2222,9 @@ function startEggFight(data) {
   const oppPlayer = data.players.find(p => p.name !== myName);
   const oppName = oppPlayer ? oppPlayer.name : 'Opponent';
 
+  // Store globally so scene can read it
+  window._eggFightData = { myName, oppName, playerIndex };
+
   phaserGame = new Phaser.Game({
     type: Phaser.AUTO,
     width: window.innerWidth,
@@ -2233,13 +2236,6 @@ function startEggFight(data) {
     fps: { target: 60 },
     scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH },
     render: { antialias: true },
-  });
-
-  // Pass data to scene via registry
-  phaserGame.registry.set('eggFightData', {
-    myName,
-    oppName,
-    playerIndex,
   });
 
   showScreen('game-screen');
