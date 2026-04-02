@@ -1297,7 +1297,7 @@ class GameScene extends Phaser.Scene {
     if (this.level < 2) return; // level 1 = open meadow
 
     const W = this.scale.width, H = this.scale.height;
-    const fX = this.fenceX - 50; // stay in player zone
+    const fX = W - 50; // full map width
 
     // Add invisible static body for collisions
     const place = (x, y, w, h) => {
