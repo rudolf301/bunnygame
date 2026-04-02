@@ -1320,17 +1320,19 @@ class GameScene extends Phaser.Scene {
   }
 
   // ============================================================
-  //  LEVEL TERRAIN OBSTACLES
+  //  LEVEL TERRAIN OBSTACLES  (grid-based even distribution)
   // ============================================================
   spawnLevelObstacles() {
-    // Clear old obstacles
     this.obstacleGfxList.forEach(g => g.destroy());
     this.obstacleGfxList = [];
     this.obstacles.clear(true, true);
 
-    const W = this.scale.width, H = this.scale.height;
-    const fX = this.fenceX - 60; // obstacles stay in player zone
+    if (this.level < 2) return; // level 1 = open meadow
 
+    const W = this.scale.width, H = this.scale.height;
+    const fX = this.fenceX - 50; // stay in player zone
+
+    // Add invisible static body for collisions
     const place = (x, y, w, h) => {
       const body = this.obstacles.create(x, y, 'blank_px');
       body.setVisible(false);
@@ -1338,148 +1340,175 @@ class GameScene extends Phaser.Scene {
       body.refreshBody();
     };
 
-    // Helper: avoid center spawn area
-    const safeX = () => {
-      let x;
-      do { x = Phaser.Math.Between(60, fX); }
-      while (Math.abs(x - W / 2) < 80);
-      return x;
-    };
-    const safeY = () => {
-      let y;
-      do { y = Phaser.Math.Between(80, H - 60); }
-      while (Math.abs(y - H / 2) < 80);
-      return y;
-    };
+    // ---- GRID-BASED PLACEMENT ----
+    // Divide player zone into a 4x3 grid, place 1 obstacle per picked cell
+    const COLS = 4, ROWS = 3;
+    const padX = 55, padY = 70;
+    const cellW = (fX - padX * 2) / COLS;
+    const cellH = (H - padY * 2) / ROWS;
+    const bunnyX = W * 0.35, bunnyY = H * 0.5; // approx player start
 
-    const count = Math.min(2 + this.level, 9);
-
-    switch (this.level) {
-
-      case 2: // 🌸 Spring Garden - hedges / flower beds
-        for (let i = 0; i < count; i++) {
-          const x = safeX(), y = safeY();
-          const g = this.add.graphics().setDepth(2);
-          g.fillStyle(0x27ae60, 1); g.fillRoundedRect(x - 30, y - 10, 60, 20, 8);
-          g.fillStyle(0xff69b4, 0.8);
-          for (let j = 0; j < 6; j++) g.fillCircle(x - 22 + j * 9, y - 10, 6);
-          this.obstacleGfxList.push(g);
-          place(x, y, 60, 20);
-        }
-        break;
-
-      case 3: // 🌲 Forest - trees
-        for (let i = 0; i < count; i++) {
-          const x = safeX(), y = safeY();
-          const g = this.add.graphics().setDepth(2);
-          g.fillStyle(0x6b4c2a, 1); g.fillRect(x - 8, y, 16, 32);
-          g.fillStyle(0x2e7d32, 1); g.fillCircle(x, y - 8, 30);
-          g.fillStyle(0x388e3c, 0.7); g.fillCircle(x - 12, y + 4, 18);
-          g.fillStyle(0x1b5e20, 0.6); g.fillCircle(x + 10, y + 2, 16);
-          this.obstacleGfxList.push(g);
-          place(x, y - 2, 28, 50);
-        }
-        break;
-
-      case 4: // 🏔️ Mountain - boulders
-        for (let i = 0; i < count; i++) {
-          const x = safeX(), y = safeY();
-          const g = this.add.graphics().setDepth(2);
-          g.fillStyle(0x78909c, 1); g.fillEllipse(x, y, 60, 40);
-          g.fillStyle(0xb0bec5, 0.6); g.fillEllipse(x - 10, y - 8, 25, 16);
-          g.fillStyle(0x546e7a, 0.5); g.fillEllipse(x + 14, y + 6, 20, 12);
-          this.obstacleGfxList.push(g);
-          place(x, y, 55, 36);
-        }
-        break;
-
-      case 5: // 🌙 Night - mushroom clusters
-        for (let i = 0; i < count; i++) {
-          const x = safeX(), y = safeY();
-          const g = this.add.graphics().setDepth(2);
-          g.fillStyle(0xe8e0d0, 1); g.fillRect(x - 5, y, 10, 22);
-          g.fillStyle(0xc62828, 1); g.fillEllipse(x, y, 34, 20);
-          g.fillStyle(0xffffff, 0.7);
-          g.fillCircle(x - 8, y - 2, 4); g.fillCircle(x + 4, y - 4, 3); g.fillCircle(x + 10, y, 3);
-          // Small ones
-          g.fillStyle(0xe8e0d0, 1); g.fillRect(x + 18, y + 4, 6, 14);
-          g.fillStyle(0xad1457, 1); g.fillEllipse(x + 22, y + 4, 20, 12);
-          this.obstacleGfxList.push(g);
-          place(x, y + 10, 50, 30);
-        }
-        break;
-
-      case 6: // ❄️ Winter - snow drifts + mini-mountains
-        for (let i = 0; i < count; i++) {
-          const x = safeX(), y = safeY();
-          const g = this.add.graphics().setDepth(2);
-          // Mini snowy mountain
-          g.fillStyle(0x9e9e9e, 1);
-          g.fillTriangle(x, y - 45, x - 38, y + 10, x + 38, y + 10);
-          g.fillStyle(0xffffff, 0.9);
-          g.fillTriangle(x, y - 45, x - 20, y - 16, x + 20, y - 16);
-          g.fillStyle(0xb0c8e0, 0.5); // snow base
-          g.fillEllipse(x, y + 10, 70, 18);
-          this.obstacleGfxList.push(g);
-          place(x, y - 10, 60, 55);
-        }
-        break;
-
-      case 7: // 🌋 Volcano - lava rocks
-        for (let i = 0; i < count; i++) {
-          const x = safeX(), y = safeY();
-          const g = this.add.graphics().setDepth(2);
-          g.fillStyle(0x3e2723, 1); g.fillEllipse(x, y, 55, 35);
-          g.fillStyle(0xbf360c, 0.8); g.fillEllipse(x - 12, y - 5, 22, 14);
-          g.fillStyle(0xff6d00, 0.5); g.fillEllipse(x + 10, y + 4, 16, 10);
-          g.fillStyle(0xff8f00, 0.3); g.fillCircle(x - 5, y - 8, 6);
-          this.obstacleGfxList.push(g);
-          place(x, y, 50, 30);
-        }
-        break;
-
-      case 8: // ⭐ Starry Sky - crystal formations
-        for (let i = 0; i < count; i++) {
-          const x = safeX(), y = safeY();
-          const g = this.add.graphics().setDepth(2);
-          const cols = [0x9c27b0, 0x3f51b5, 0x00bcd4];
-          for (let c = 0; c < 3; c++) {
-            const ox = [-14, 0, 12][c], h2 = [38, 52, 32][c];
-            g.fillStyle(cols[c], 0.85);
-            g.fillTriangle(x + ox, y - h2, x + ox - 8, y + 6, x + ox + 8, y + 6);
-            g.fillStyle(0xffffff, 0.3);
-            g.fillTriangle(x + ox, y - h2, x + ox - 3, y - h2 + 12, x + ox + 3, y - h2 + 12);
-          }
-          this.obstacleGfxList.push(g);
-          place(x, y - 10, 44, 58);
-        }
-        break;
-
-      default: // 👑 Legend (9+) - mix of everything
-        for (let i = 0; i < count; i++) {
-          const x = safeX(), y = safeY();
-          const type = i % 4;
-          const g = this.add.graphics().setDepth(2);
-          if (type === 0) {
-            g.fillStyle(0x2e7d32); g.fillCircle(x, y - 8, 28);
-            g.fillStyle(0x6b4c2a); g.fillRect(x - 7, y, 14, 28);
-          } else if (type === 1) {
-            g.fillStyle(0x78909c); g.fillEllipse(x, y, 52, 34);
-            g.fillStyle(0xb0bec5, 0.5); g.fillEllipse(x - 8, y - 7, 22, 14);
-          } else if (type === 2) {
-            g.fillStyle(0x3e2723); g.fillEllipse(x, y, 48, 30);
-            g.fillStyle(0xff6d00, 0.6); g.fillEllipse(x, y - 4, 20, 12);
-          } else {
-            g.fillStyle(0x9c27b0, 0.85);
-            g.fillTriangle(x, y - 46, x - 12, y + 4, x + 12, y + 4);
-            g.fillStyle(0xce93d8, 0.4);
-            g.fillTriangle(x, y - 46, x - 4, y - 30, x + 4, y - 30);
-          }
-          this.obstacleGfxList.push(g);
-          place(x, y, 46, 44);
-        }
-        break;
+    // Build shuffled list of grid cell positions
+    const cells = [];
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        // Random jitter within cell
+        const x = padX + c * cellW + cellW * 0.15 + Math.random() * cellW * 0.7;
+        const y = padY + r * cellH + cellH * 0.15 + Math.random() * cellH * 0.7;
+        // Skip cells too close to player spawn
+        if (Math.hypot(x - bunnyX, y - bunnyY) < 90) continue;
+        cells.push({ x, y });
+      }
     }
+    // Fisher-Yates shuffle
+    for (let i = cells.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [cells[i], cells[j]] = [cells[j], cells[i]];
+    }
+
+    // How many obstacles: grows with level
+    const count = Math.min(3 + this.level, cells.length);
+    const chosen = cells.slice(0, count);
+
+    const drawObstacle = ({ x, y }, idx) => {
+      const g = this.add.graphics().setDepth(2);
+      this.obstacleGfxList.push(g);
+
+      switch (this.level) {
+
+        case 2: { // 🌸 Spring Garden - flower hedges
+          g.fillStyle(0x27ae60); g.fillRoundedRect(x - 32, y - 11, 64, 22, 10);
+          g.fillStyle(0xff69b4, 0.9);
+          for (let j = 0; j < 7; j++) g.fillCircle(x - 26 + j * 9, y - 11, 7);
+          g.fillStyle(0xffffff, 0.3);
+          for (let j = 0; j < 7; j++) g.fillCircle(x - 24 + j * 9, y - 14, 3);
+          place(x, y, 64, 22);
+          break;
+        }
+
+        case 3: { // 🌲 Forest - pine trees
+          // Shadow
+          g.fillStyle(0x000000, 0.12); g.fillEllipse(x + 4, y + 28, 40, 12);
+          // Trunk
+          g.fillStyle(0x5d4037); g.fillRect(x - 7, y + 4, 14, 30);
+          g.fillStyle(0x4e342e, 0.5); g.fillRect(x + 1, y + 4, 4, 30);
+          // Canopy layers
+          g.fillStyle(0x1b5e20); g.fillTriangle(x, y - 48, x - 32, y + 8, x + 32, y + 8);
+          g.fillStyle(0x2e7d32); g.fillTriangle(x, y - 34, x - 26, y + 14, x + 26, y + 14);
+          g.fillStyle(0x388e3c); g.fillTriangle(x, y - 18, x - 20, y + 18, x + 20, y + 18);
+          g.fillStyle(0xffffff, 0.12); g.fillTriangle(x, y - 48, x - 6, y - 30, x + 6, y - 30);
+          place(x, y - 10, 30, 58);
+          break;
+        }
+
+        case 4: { // 🏔️ Mountain - rocky boulders
+          g.fillStyle(0x000000, 0.1); g.fillEllipse(x + 5, y + 18, 66, 14);
+          g.fillStyle(0x546e7a); g.fillEllipse(x, y, 64, 42);
+          g.fillStyle(0x78909c); g.fillEllipse(x - 4, y - 6, 52, 30);
+          g.fillStyle(0xb0bec5, 0.7); g.fillEllipse(x - 14, y - 12, 20, 13);
+          g.fillStyle(0xcfd8dc, 0.4); g.fillEllipse(x - 18, y - 15, 9, 6);
+          g.fillStyle(0x455a64, 0.5); g.fillEllipse(x + 18, y + 8, 18, 11);
+          place(x, y, 58, 38);
+          break;
+        }
+
+        case 5: { // 🌙 Night - glowing mushroom clusters
+          // Big shroom
+          g.fillStyle(0xd7ccc8); g.fillRect(x - 6, y + 2, 12, 24);
+          g.fillStyle(0xb71c1c); g.fillEllipse(x, y + 2, 38, 22);
+          g.fillStyle(0xff1744, 0.3); g.fillEllipse(x, y - 2, 30, 14);
+          g.fillStyle(0xffffff, 0.8);
+          g.fillCircle(x - 10, y - 1, 4); g.fillCircle(x + 2, y - 4, 3); g.fillCircle(x + 12, y, 4);
+          // Medium shroom
+          g.fillStyle(0xd7ccc8); g.fillRect(x + 22, y + 8, 8, 16);
+          g.fillStyle(0xad1457); g.fillEllipse(x + 26, y + 8, 24, 14);
+          g.fillStyle(0xffffff, 0.6); g.fillCircle(x + 20, y + 5, 3); g.fillCircle(x + 28, y + 4, 2);
+          // Small shroom
+          g.fillStyle(0xd7ccc8); g.fillRect(x - 24, y + 12, 6, 12);
+          g.fillStyle(0x880e4f); g.fillEllipse(x - 21, y + 12, 16, 10);
+          // Glow effect
+          g.fillStyle(0xff4081, 0.08); g.fillCircle(x, y, 38);
+          place(x + 4, y + 12, 60, 34);
+          break;
+        }
+
+        case 6: { // ❄️ Winter - snowy mini mountains
+          g.fillStyle(0x000000, 0.08); g.fillEllipse(x + 4, y + 14, 80, 16);
+          // Mountain body
+          g.fillStyle(0x78909c); g.fillTriangle(x, y - 52, x - 44, y + 14, x + 44, y + 14);
+          g.fillStyle(0x90a4ae); g.fillTriangle(x - 10, y - 28, x - 44, y + 14, x + 10, y + 14);
+          // Snow cap
+          g.fillStyle(0xeceff1); g.fillTriangle(x, y - 52, x - 22, y - 20, x + 22, y - 20);
+          g.fillStyle(0xffffff, 0.7); g.fillTriangle(x, y - 52, x - 8, y - 38, x + 8, y - 38);
+          // Snow base drift
+          g.fillStyle(0xe3f2fd, 0.7); g.fillEllipse(x, y + 14, 75, 16);
+          g.fillStyle(0xffffff, 0.4); g.fillEllipse(x - 10, y + 10, 30, 9);
+          place(x, y - 14, 68, 64);
+          break;
+        }
+
+        case 7: { // 🌋 Volcano - lava rock clusters
+          g.fillStyle(0x000000, 0.15); g.fillEllipse(x + 3, y + 16, 64, 14);
+          g.fillStyle(0x1a0000); g.fillEllipse(x, y, 60, 38);
+          g.fillStyle(0x3e2723); g.fillEllipse(x - 4, y - 4, 46, 26);
+          g.fillStyle(0xbf360c, 0.9); g.fillEllipse(x - 14, y - 6, 18, 11);
+          g.fillStyle(0xff6d00, 0.7); g.fillEllipse(x - 14, y - 9, 12, 7);
+          g.fillStyle(0xff8f00, 0.5); g.fillCircle(x - 14, y - 11, 4);
+          // Lava crack
+          g.lineStyle(2, 0xff3d00, 0.6);
+          g.lineBetween(x + 6, y - 8, x + 18, y + 6);
+          g.lineBetween(x + 18, y + 6, x + 12, y + 14);
+          g.fillStyle(0xff1744, 0.2); g.fillCircle(x + 8, y, 22);
+          place(x, y, 54, 34);
+          break;
+        }
+
+        case 8: { // ⭐ Starry Sky - crystal spires
+          const crystalColors = [0x9c27b0, 0x3f51b5, 0x00bcd4, 0xe91e63];
+          const offsets = [{ ox: -16, h: 40 }, { ox: 0, h: 56 }, { ox: 14, h: 36 }, { ox: -6, h: 48 }];
+          offsets.forEach(({ ox, h: ch }, ci) => {
+            g.fillStyle(crystalColors[ci], 0.85);
+            g.fillTriangle(x + ox, y - ch, x + ox - 9, y + 6, x + ox + 9, y + 6);
+            g.fillStyle(0xffffff, 0.25);
+            g.fillTriangle(x + ox, y - ch, x + ox - 3, y - ch + 14, x + ox + 3, y - ch + 14);
+            g.fillStyle(crystalColors[ci], 0.3);
+            g.fillEllipse(x + ox, y + 6, 18, 6);
+          });
+          g.fillStyle(0xffffff, 0.06); g.fillCircle(x, y - 20, 42);
+          place(x, y - 16, 50, 64);
+          break;
+        }
+
+        default: { // 👑 Legend (9+) - mix of all terrain
+          const type = idx % 4;
+          if (type === 0) { // tree
+            g.fillStyle(0x000000, 0.1); g.fillEllipse(x + 3, y + 26, 36, 10);
+            g.fillStyle(0x5d4037); g.fillRect(x - 6, y + 4, 12, 26);
+            g.fillStyle(0x1b5e20); g.fillTriangle(x, y - 42, x - 28, y + 8, x + 28, y + 8);
+            g.fillStyle(0x2e7d32); g.fillTriangle(x, y - 28, x - 22, y + 12, x + 22, y + 12);
+            place(x, y - 8, 28, 52);
+          } else if (type === 1) { // boulder
+            g.fillStyle(0x546e7a); g.fillEllipse(x, y, 58, 38);
+            g.fillStyle(0x78909c); g.fillEllipse(x - 4, y - 6, 46, 26);
+            g.fillStyle(0xb0bec5, 0.6); g.fillEllipse(x - 12, y - 12, 18, 12);
+            place(x, y, 52, 34);
+          } else if (type === 2) { // snowy mountain
+            g.fillStyle(0x78909c); g.fillTriangle(x, y - 48, x - 40, y + 12, x + 40, y + 12);
+            g.fillStyle(0xeceff1); g.fillTriangle(x, y - 48, x - 20, y - 18, x + 20, y - 18);
+            g.fillStyle(0xe3f2fd, 0.6); g.fillEllipse(x, y + 12, 68, 14);
+            place(x, y - 12, 62, 58);
+          } else { // crystal
+            g.fillStyle(0x9c27b0, 0.85); g.fillTriangle(x, y - 50, x - 12, y + 6, x + 12, y + 6);
+            g.fillStyle(0x3f51b5, 0.8); g.fillTriangle(x + 16, y - 36, x + 6, y + 6, x + 26, y + 6);
+            g.fillStyle(0xffffff, 0.2); g.fillTriangle(x, y - 50, x - 4, y - 32, x + 4, y - 32);
+            place(x + 8, y - 16, 42, 58);
+          }
+          break;
+        }
+      }
+    };
+
+    chosen.forEach((cell, i) => drawObstacle(cell, i));
   }
 
   doGameOver() {
