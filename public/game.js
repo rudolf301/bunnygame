@@ -288,16 +288,8 @@ class GameScene extends Phaser.Scene {
     const W = this.scale.width;
     const H = this.scale.height;
 
-    // ---- FENCE: right side boundary (chickens come from there, eggs unreachable) ----
-    this.fenceX = Math.floor(W * 0.70);
-
     // Background
     this.add.rectangle(W / 2, H / 2, W, H, 0xc8e6a0);
-    // Right side danger zone tint
-    this.dangerZone = this.add.rectangle(
-      this.fenceX + (W - this.fenceX) / 2, H / 2,
-      W - this.fenceX, H, 0xe74c3c, 0.07
-    ).setDepth(0);
 
     for (let x = 0; x < W; x += 90) {
       for (let y = 0; y < H; y += 90) {
@@ -312,9 +304,9 @@ class GameScene extends Phaser.Scene {
       this.grassTufts.push({ x: Phaser.Math.Between(0, W), y: Phaser.Math.Between(0, H), h: Phaser.Math.Between(6, 14) });
     }
 
-    // Flowers (only in player zone)
-    for (let i = 0; i < 14; i++) {
-      const fx = Phaser.Math.Between(30, this.fenceX - 30);
+    // Flowers (across whole map)
+    for (let i = 0; i < 18; i++) {
+      const fx = Phaser.Math.Between(30, W - 30);
       const fy = Phaser.Math.Between(30, H - 30);
       const fc = [0xff6b6b, 0xffd93d, 0x6c5ce7, 0xfd79a8, 0xffffff][i % 5];
       const petals = Phaser.Math.Between(4, 6);
@@ -346,8 +338,6 @@ class GameScene extends Phaser.Scene {
     this.obstacles = this.physics.add.staticGroup();
     this.obstacleGfxList = []; // graphics to clear on level change
 
-    // Fence graphics layer (drawn on top)
-    this.fenceGfx = this.add.graphics().setDepth(7);
     this.warnings = [];
 
     // Textures - create once, reuse
@@ -464,14 +454,6 @@ class GameScene extends Phaser.Scene {
     // ---- MOBILE TOUCH: ability tap handlers ----
     this.setupMobileControls();
 
-    // Fence static body (blocks player, not chickens)
-    this.fenceStaticBody = this.physics.add.staticImage(this.fenceX, H / 2, 'blank_px');
-    this.fenceStaticBody.setVisible(false);
-    this.fenceStaticBody.body.setSize(10, H);
-    this.fenceStaticBody.refreshBody();
-
-    // Draw initial fence
-    this.drawFence();
     // Spawn initial level terrain
     this.spawnLevelObstacles();
 
@@ -486,8 +468,7 @@ class GameScene extends Phaser.Scene {
     this.physics.add.overlap(this.bunny, this.powerups, this.collectPowerup, null, this);
     this.physics.add.overlap(this.bunny, this.hearts, this.collectHeart, null, this);
 
-    // Colliders: bunny hits fence + obstacles; chickens hit obstacles
-    this.physics.add.collider(this.bunny, this.fenceStaticBody);
+    // Colliders: bunny + chickens hit terrain obstacles
     this.physics.add.collider(this.bunny, this.obstacles);
     this.physics.add.collider(this.chickens, this.obstacles);
 
@@ -681,12 +662,7 @@ class GameScene extends Phaser.Scene {
   // ============================================================
   spawnEgg() {
     const W = this.scale.width, H = this.scale.height;
-    const fX = this.fenceX || W;
-    // 35% chance egg spawns in the danger zone (right side - unreachable!)
-    const inDangerZone = Math.random() < 0.35;
-    const x = inDangerZone
-      ? Phaser.Math.Between(fX + 20, W - 20)
-      : Phaser.Math.Between(40, fX - 40);
+    const x = Phaser.Math.Between(40, W - 40);
     const y = Phaser.Math.Between(60, H - 60);
     const colorIdx = Phaser.Math.Between(0, EGG_COLORS.length - 1);
 
@@ -804,21 +780,13 @@ class GameScene extends Phaser.Scene {
     if (totalChickens >= this.maxChickens) return;
 
     const W = this.scale.width, H = this.scale.height;
-    const fX = this.fenceX || W;
-    // 50% chance chickens spawn from the right (fence zone) — they pass through fence
-    const side = Math.random() < 0.5 ? Phaser.Math.Between(0, 3) : 5;
+    const side = Phaser.Math.Between(0, 3);
     let sx, sy, wx, wy;
 
     if (side === 0) { sx = -30; sy = Phaser.Math.Between(60, H - 60); wx = 25; wy = sy; }
     else if (side === 1) { sx = W + 30; sy = Phaser.Math.Between(60, H - 60); wx = W - 25; wy = sy; }
     else if (side === 2) { sx = Phaser.Math.Between(60, W - 60); sy = -30; wx = sx; wy = 25; }
-    else if (side === 3) { sx = Phaser.Math.Between(60, W - 60); sy = H + 30; wx = sx; wy = H - 25; }
-    else {
-      // From right zone (behind fence) — warning shows at fence edge
-      sx = Phaser.Math.Between(fX + 20, W - 20);
-      sy = Phaser.Math.Between(60, H - 60);
-      wx = fX + 5; wy = sy;
-    }
+    else { sx = Phaser.Math.Between(60, W - 60); sy = H + 30; wx = sx; wy = H - 25; }
 
     this.warnings.push({ x: wx, y: wy, timer: 1500, max: 1500, sx, sy });
     SFX.chickenWarn();
@@ -835,8 +803,8 @@ class GameScene extends Phaser.Scene {
     const offsetY = (Math.random() - 0.5) * 60;
 
     const chicken = this.physics.add.sprite(sx + offsetX, sy + offsetY, 'chicken_tex');
-    // Speed: moderate, caps at level 8
-    chicken.speed = 55 + Math.min(this.level, 8) * 10 + Math.random() * 20;
+    // Speed: faster base, scales more aggressively with level
+    chicken.speed = 90 + Math.min(this.level, 10) * 15 + Math.random() * 30;
     chicken.baseSpeed = chicken.speed;
     chicken.setDepth(6);
     chicken.body.setSize(35, 30);
@@ -1278,7 +1246,6 @@ class GameScene extends Phaser.Scene {
     };
     const tint = tints[this.level] || 0xc8e6a0;
     this.cameras.main.setBackgroundColor(tint);
-    this.drawFence();
     this.spawnLevelObstacles();
   }
 
@@ -1632,6 +1599,15 @@ class GameScene extends Phaser.Scene {
     this.bunny.setVelocity(vx, vy);
     this.bunny.setFlipX(this.bunny.dir === -1);
 
+    // ---- DEV CHEAT: P = +200 score, L = next level ----
+    if (Phaser.Input.Keyboard.JustDown(this.input.keyboard.addKey('P'))) {
+      this.score += 200; this.updateHUD(); showToast('🧪 +200 score (cheat)');
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.input.keyboard.addKey('L'))) {
+      this.level++; this.applyLevelTheme(); this.updateHUD();
+      showToast(`🧪 Level ${this.level} (cheat)`);
+    }
+
     // ---- TIMERS ----
     if (this.invTimer > 0) this.invTimer -= delta;
     if (this.shieldTimer > 0) {
@@ -1832,13 +1808,12 @@ class GameScene extends Phaser.Scene {
     const maxEggs = Math.min(4 + this.level, 14);
     while (this.eggs.countActive() < maxEggs) this.spawnEgg();
 
-    // Chickens: cooldown-based, hard cap via actuallySpawnChicken
+    // Chickens: fast spawn, scales with level + score
     this.chickenSpawnCooldown -= delta;
     if (this.chickenSpawnCooldown <= 0) {
-      // Cooldown shrinks with level AND score (min 2.5s in hard mode, 4s normal)
-      const scoreSpeedUp = Math.min(2500, Math.floor(this.score / 80) * 200);
-      const minCooldown = Math.max(this.score >= 200 ? 2500 : 4000, 9000 - this.level * 600 - scoreSpeedUp);
-      this.chickenSpawnCooldown = minCooldown + Math.random() * 2500;
+      const scoreSpeedUp = Math.min(3000, Math.floor(this.score / 50) * 200);
+      const minCooldown = Math.max(1500, 7000 - this.level * 500 - scoreSpeedUp);
+      this.chickenSpawnCooldown = minCooldown + Math.random() * 1500;
       this.spawnChickenWithWarning();
     }
 
