@@ -276,6 +276,16 @@ class GameScene extends Phaser.Scene {
     // Hard mode flag (score >= 200)
     this.hardModeAnnounced = false;
 
+    // Angry mode (5 eggs streak)
+    this.angryTimer = 0;
+    this.angryAnnounced = false;
+
+    // Boss
+    this.boss = null;
+
+    // Carrot throw cooldown
+    this.carrotThrowCd = 0;
+
     // ---- ABILITY HOTBAR (keys 1-4) ----
     this.abilityDefs = [
       { label: '1', icon: '❄️', name: 'Freeze', maxCd: 20000, duration: 5000 },
@@ -328,6 +338,8 @@ class GameScene extends Phaser.Scene {
     this.chickens = this.physics.add.group();
     this.powerups = this.physics.add.group();
     this.hearts = this.physics.add.group();
+    this.chickenProjs = this.physics.add.group(); // eggs thrown by chickens
+    this.carrotProjs  = this.physics.add.group(); // carrots thrown by bunny
 
     // Terrain obstacles (collidable for bunny + chickens)
     if (!this.textures.exists('blank_px')) {
@@ -355,6 +367,9 @@ class GameScene extends Phaser.Scene {
     if (!this.textures.exists('magnet_powerup')) this.createMagnetTexture();
     if (!this.textures.exists('freeze_powerup')) this.createFreezeTexture();
     if (!this.textures.exists('half_heart_tex')) this.createHalfHeartTexture();
+    if (!this.textures.exists('boss_tex'))       this.createBossTex();
+    if (!this.textures.exists('chick_egg_tex'))  this.createChickEggTex();
+    if (!this.textures.exists('carrot_proj_tex')) this.createCarrotProjTex();
     // Pre-create egg textures (one per color)
     this.eggTextureKeys = [];
     EGG_COLORS.forEach((color, idx) => {
@@ -451,6 +466,9 @@ class GameScene extends Phaser.Scene {
       this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.FOUR),
     ];
 
+    // Space = throw carrot
+    this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+
     // ---- MOBILE TOUCH: ability tap handlers ----
     this.setupMobileControls();
 
@@ -471,6 +489,10 @@ class GameScene extends Phaser.Scene {
     // Colliders: bunny + chickens hit terrain obstacles
     this.physics.add.collider(this.bunny, this.obstacles);
     this.physics.add.collider(this.chickens, this.obstacles);
+
+    // Projectile overlaps
+    this.physics.add.overlap(this.bunny, this.chickenProjs, this.hitByChickenEgg, null, this);
+    this.physics.add.overlap(this.carrotProjs, this.chickens, this.carrotHitChicken, null, this);
 
     // Graphics layers
     this.warnGfx = this.add.graphics().setDepth(5);
@@ -805,6 +827,10 @@ class GameScene extends Phaser.Scene {
     const chicken = this.physics.add.sprite(sx + offsetX, sy + offsetY, 'chicken_tex');
     // Speed: faster base, scales more aggressively with level
     chicken.speed = 90 + Math.min(this.level, 10) * 15 + Math.random() * 30;
+    chicken.dashTimer  = 3000 + Math.random() * 5000; // time until next dash
+    chicken.dashActive = 0;                            // dash duration remaining
+    chicken.throwTimer = 5000 + Math.random() * 5000; // time until throws egg
+    chicken.stunTimer  = 0;                            // stun from carrot hit
     chicken.baseSpeed = chicken.speed;
     chicken.setDepth(6);
     chicken.body.setSize(35, 30);
@@ -852,6 +878,14 @@ class GameScene extends Phaser.Scene {
     // Level up with themed levels
     const levelThresholds = [0, 8, 20, 38, 60, 90, 125, 170, 220, 280, 350];
     const nextThreshold = levelThresholds[this.level] || (this.level * 40);
+    // Angry mode: 5+ combo streak
+    if (this.comboCount >= 5 && this.angryTimer <= 0) {
+      this.angryTimer = 10000;
+      this.cameras.main.flash(300, 255, 60, 0, false);
+      showToast('😡 ANGRY! Chickens enraged for 10s!');
+      this.addPopup(bunny.x, bunny.y - 55, '😡 ANGRY!', '#e74c3c');
+    }
+
     if (this.score >= nextThreshold) {
       this.level++;
       this.spawnChickenWithWarning();
@@ -876,6 +910,11 @@ class GameScene extends Phaser.Scene {
 
       // Change background tint per level
       this.applyLevelTheme();
+
+      // Boss every 5th level
+      if (this.level % 5 === 0) {
+        this.time.delayedCall(1500, () => this.spawnBoss());
+      }
     }
 
     // Carrot spawn
@@ -1142,7 +1181,7 @@ class GameScene extends Phaser.Scene {
         const blastRadius = hardMode ? 200 : Infinity;
         let kills = 0;
         const toKill = this.chickens.getChildren().filter(c => {
-          if (!c.active) return false;
+          if (!c.active || c.isBoss) return false;
           if (hardMode) {
             return Phaser.Math.Distance.Between(this.bunny.x, this.bunny.y, c.x, c.y) <= blastRadius;
           }
@@ -1153,6 +1192,11 @@ class GameScene extends Phaser.Scene {
           c.destroy();
           kills++;
         });
+        // Blast does 1 HP to boss if in range
+        if (this.boss && this.boss.active) {
+          const bd = Phaser.Math.Distance.Between(this.bunny.x, this.bunny.y, this.boss.x, this.boss.y);
+          if (bd <= (hardMode ? blastRadius : 999)) this.bossHit(this.boss);
+        }
 
         if (kills > 0) {
           const pts = kills * 3 * this.comboMultiplier;
@@ -1236,6 +1280,193 @@ class GameScene extends Phaser.Scene {
   shakeScreen(duration) {
     this.screenShakeTimer = duration;
     this.cameras.main.shake(duration, 0.005);
+  }
+
+  // ============================================================
+  //  BOSS CHICKEN
+  // ============================================================
+  createBossTex() {
+    const g = this.make.graphics({ add: false });
+    const cx = 50, cy = 40;
+    g.fillStyle(0xd32f2f); g.fillEllipse(cx, cy, 72, 55);
+    g.fillStyle(0xb71c1c); g.fillEllipse(cx - 8, cy - 3, 38, 28);
+    g.fillStyle(0xd32f2f); g.fillCircle(cx + 26, cy - 20, 19);
+    g.fillStyle(0xff1744); g.fillTriangle(cx + 20, cy - 36, cx + 22, cy - 56, cx + 24, cy - 36);
+    g.fillTriangle(cx + 24, cy - 36, cx + 26, cy - 52, cx + 28, cy - 36);
+    g.fillStyle(0xff6f00); g.fillTriangle(cx + 42, cy - 23, cx + 58, cy - 17, cx + 42, cy - 9);
+    g.fillStyle(0xffffff); g.fillCircle(cx + 32, cy - 23, 5); g.fillCircle(cx + 32, cy - 23, 2.5);
+    g.fillStyle(0xff0000); g.fillCircle(cx + 33, cy - 23, 1.5);
+    g.lineStyle(3, 0x7f0000); g.lineBetween(cx + 22, cy - 33, cx + 38, cy - 28);
+    g.lineStyle(2, 0xff6f00);
+    g.lineBetween(cx - 8, cy + 26, cx - 8, cy + 40); g.lineBetween(cx + 6, cy + 26, cx + 6, cy + 40);
+    g.generateTexture('boss_tex', 100, 80); g.destroy();
+  }
+
+  createChickEggTex() {
+    const g = this.make.graphics({ add: false });
+    g.fillStyle(0xff6b6b); g.fillEllipse(9, 12, 14, 18);
+    g.fillStyle(0xffffff, 0.4); g.fillEllipse(7, 8, 4, 6);
+    g.generateTexture('chick_egg_tex', 18, 24); g.destroy();
+  }
+
+  createCarrotProjTex() {
+    const g = this.make.graphics({ add: false });
+    g.fillStyle(0xe67e22); g.fillTriangle(10, 26, 4, 6, 16, 6);
+    g.fillStyle(0x27ae60); g.fillEllipse(7, 4, 5, 10); g.fillEllipse(13, 3, 5, 10);
+    g.generateTexture('carrot_proj_tex', 20, 30); g.destroy();
+  }
+
+  spawnBoss() {
+    if (this.isGameOver) return;
+    const W = this.scale.width, H = this.scale.height;
+    // Spawn from random side
+    const side = Phaser.Math.Between(0, 3);
+    let bx, by;
+    if (side === 0) { bx = -50; by = H / 2; }
+    else if (side === 1) { bx = W + 50; by = H / 2; }
+    else if (side === 2) { bx = W / 2; by = -50; }
+    else { bx = W / 2; by = H + 50; }
+
+    const boss = this.physics.add.sprite(bx, by, 'boss_tex');
+    boss.setScale(1.3).setDepth(9);
+    boss.body.setSize(70, 55);
+    boss.isBoss = true;
+    boss.hp = 3;
+    boss.speed = 60;
+    boss.throwTimer = 2000;
+    boss.dashTimer = 99999; // boss doesn't dash
+    boss.dashActive = 0;
+    boss.stunTimer = 0;
+    this.chickens.add(boss);
+    this.boss = boss;
+
+    // HP bar (simple text above boss)
+    boss.hpText = this.add.text(bx, by - 55, '❤️❤️❤️', {
+      fontSize: '18px', stroke: '#000', strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(20);
+
+    this.cameras.main.flash(400, 200, 0, 0, false);
+    this.shakeScreen(300);
+    showToast(`💀 BOSS! Level ${this.level} Boss Chicken attacks!`);
+    this.addPopup(W / 2, H / 2 - 40, '💀 BOSS!', '#ff0000');
+
+    // Update boss hp text each frame
+    this.physics.add.overlap(this.carrotProjs, boss, (proj, b) => {
+      this.carrotHitBoss(proj, b);
+    }, null, this);
+  }
+
+  bossHit(boss) {
+    boss.hp--;
+    this.shakeScreen(200);
+    this.spawnBurst(boss.x, boss.y, 0xe74c3c, 15);
+    const hearts = '❤️'.repeat(Math.max(0, boss.hp));
+    if (boss.hpText) boss.hpText.setText(hearts || '💀');
+
+    if (boss.hp <= 0) {
+      this.bossDie(boss);
+    } else {
+      // Flash boss red
+      boss.setTint(0xffffff);
+      this.time.delayedCall(150, () => { if (boss.active) boss.clearTint(); });
+    }
+  }
+
+  bossDie(boss) {
+    const bx = boss.x, by = boss.y;
+    if (boss.hpText) boss.hpText.destroy();
+    boss.destroy();
+    this.boss = null;
+
+    for (let i = 0; i < 5; i++) {
+      this.time.delayedCall(i * 120, () => {
+        this.spawnBurst(bx + Phaser.Math.Between(-60, 60), by + Phaser.Math.Between(-40, 40), 0xff6b6b, 20);
+        this.spawnBurst(bx + Phaser.Math.Between(-60, 60), by + Phaser.Math.Between(-40, 40), 0xffd700, 15);
+      });
+    }
+    this.cameras.main.flash(500, 255, 100, 0, false);
+    this.shakeScreen(600);
+
+    const pts = 50 * this.comboMultiplier;
+    this.score += pts;
+    this.addPopup(bx, by - 40, `💀 BOSS DOWN! +${pts}`, '#ffd700');
+    showToast(`💀 Boss defeated! +${pts} pts!`);
+    this.updateHUD();
+  }
+
+  // ============================================================
+  //  PROJECTILES
+  // ============================================================
+  chickenThrowEgg(chicken) {
+    if (!this.bunny || this.isGameOver) return;
+    const bx = chicken.x, by = chicken.y;
+    const tx = this.bunny.x, ty = this.bunny.y;
+    const d = Math.hypot(tx - bx, ty - by) || 1;
+    const speed = 280;
+
+    const proj = this.physics.add.sprite(bx, by, 'chick_egg_tex');
+    proj.setDepth(7);
+    proj.body.setSize(14, 18);
+    proj.life = 2500;
+    proj.setVelocity((tx - bx) / d * speed, (ty - by) / d * speed);
+    this.chickenProjs.add(proj);
+
+    // Rotate toward target
+    proj.angle = Phaser.Math.RadToDeg(Math.atan2(ty - by, tx - bx));
+  }
+
+  hitByChickenEgg(bunny, proj) {
+    if (!proj.active || this.invTimer > 0 || this.shieldTimer > 0) return;
+    proj.destroy();
+    this.lives -= 0.5;
+    this.invTimer = 1200;
+    SFX.damage();
+    this.spawnBurst(bunny.x, bunny.y, 0xff6b6b, 10);
+    this.shakeScreen(200);
+    this.addPopup(bunny.x, bunny.y - 20, '🥚 -½❤️', '#ff4444');
+    if (this.lives <= 0) this.doGameOver();
+    this.updateHUD();
+  }
+
+  throwCarrot() {
+    if (this.isGameOver) return;
+    this.carrotThrowCd = 1800;
+    const bx = this.bunny.x, by = this.bunny.y;
+    const dir = this.bunny.dir || 1;
+
+    // Use last movement direction if available
+    const vx = this.bunny.body.velocity.x;
+    const vy = this.bunny.body.velocity.y;
+    const mag = Math.hypot(vx, vy) || 1;
+    const nx = mag > 10 ? vx / mag : dir;
+    const ny = mag > 10 ? vy / mag : 0;
+
+    const speed = 520;
+    const proj = this.physics.add.sprite(bx, by, 'carrot_proj_tex');
+    proj.setDepth(11);
+    proj.body.setSize(12, 18);
+    proj.life = 1200;
+    proj.setVelocity(nx * speed, ny * speed);
+    proj.angle = Phaser.Math.RadToDeg(Math.atan2(ny, nx)) + 90;
+    this.carrotProjs.add(proj);
+
+    SFX.carrot();
+    this.spawnBurst(bx, by, 0xe67e22, 5);
+  }
+
+  carrotHitChicken(proj, chicken) {
+    if (!proj.active || !chicken.active) return;
+    if (chicken.isBoss) return; // handled separately
+    proj.destroy();
+    chicken.stunTimer = 2000;
+    this.spawnBurst(chicken.x, chicken.y, 0xe67e22, 12);
+    this.addPopup(chicken.x, chicken.y - 20, '🥕 STUNNED!', '#e67e22');
+  }
+
+  carrotHitBoss(proj, boss) {
+    if (!proj.active || !boss.active) return;
+    proj.destroy();
+    this.bossHit(boss);
   }
 
   applyLevelTheme() {
@@ -1715,23 +1946,71 @@ class GameScene extends Phaser.Scene {
       this.warnGfx.fillCircle(w.x, w.y + 6, 2);
     }
 
+    // ---- ANGRY TIMER ----
+    if (this.angryTimer > 0) this.angryTimer -= delta;
+
+    // ---- CARROT THROW COOLDOWN ----
+    if (this.carrotThrowCd > 0) this.carrotThrowCd -= delta;
+
+    // ---- SPACE = THROW CARROT ----
+    if (Phaser.Input.Keyboard.JustDown(this.spaceKey) && this.carrotThrowCd <= 0) {
+      this.throwCarrot();
+    }
+
     // ---- CHICKENS CHASE (with separation so they spread out) ----
     const frozen = this.freezeTimer > 0;
     const hardMode = this.score >= 200;
+    const angry = this.angryTimer > 0;
     const allChickens = this.chickens.getChildren();
     allChickens.forEach((c, idx) => {
+      if (!c.active) return;
+
+      // ---- STUN (from carrot hit) ----
+      if (c.stunTimer > 0) {
+        c.stunTimer -= delta;
+        c.setVelocity(0, 0);
+        c.setTint(0xf39c12);
+        return;
+      }
+
       if (frozen) {
         if (hardMode) {
-          // Hard mode: chickens resist freeze - only 30% speed, tinted blue-ish
           c.setTint(0xa8d8ff);
-          // still chase but very slow — handled below with a slowFactor
         } else {
           c.setVelocity(0, 0);
           c.setTint(0x74b9ff);
           return;
         }
+      } else if (angry) {
+        c.setTint(c.isBoss ? 0xff0000 : 0xff4444); // red tint in angry mode
       } else {
         c.clearTint();
+      }
+
+      // ---- DASH TIMER ----
+      if (!c.isBoss) {
+        if (c.dashActive > 0) {
+          c.dashActive -= delta;
+        } else {
+          c.dashTimer -= delta;
+          if (c.dashTimer <= 0) {
+            c.dashActive = 500 + Math.random() * 300; // dash lasts 0.5-0.8s
+            c.dashTimer = 3000 + Math.random() * 5000;
+            c.setTint(0xe74c3c);
+            this.spawnBurst(c.x, c.y, 0xe74c3c, 5);
+          }
+        }
+      }
+
+      // ---- EGG THROW (chickens + boss) ----
+      if (c.throwTimer !== undefined) {
+        c.throwTimer -= delta;
+        if (c.throwTimer <= 0) {
+          this.chickenThrowEgg(c);
+          c.throwTimer = c.isBoss
+            ? 1800 + Math.random() * 1200
+            : 5000 + Math.random() * 4000;
+        }
       }
 
       // Direction toward bunny
@@ -1739,38 +2018,54 @@ class GameScene extends Phaser.Scene {
       let dy = this.bunny.y - c.y;
       const d = Math.hypot(dx, dy) || 1;
 
-      // Separation force: push away from other chickens
+      // Separation force
       let sepX = 0, sepY = 0;
       allChickens.forEach((other, j) => {
-        if (j === idx) return;
+        if (j === idx || !other.active) return;
         const ox = c.x - other.x;
         const oy = c.y - other.y;
         const od = Math.hypot(ox, oy) || 1;
-        if (od < 80) { // separation radius
+        if (od < 80) {
           const force = (80 - od) / 80;
           sepX += (ox / od) * force;
           sepY += (oy / od) * force;
         }
       });
 
-      // Wobble per-chicken so they don't move identically
       const wobble = Math.sin(time * 0.003 + idx * 2.5) * 0.25;
-
-      // Hard mode: score ramps up chicken base speed (+8 per 200 pts, max +60)
       const scoreSpeedBonus = hardMode ? Math.min(60, Math.floor(this.score / 200) * 8) : 0;
-
-      // Freeze in hard mode = 30% speed only
       const freezeSlow = (frozen && hardMode) ? 0.3 : 1.0;
+      const angryBoost = angry ? 1.45 : 1.0;
+      const dashBoost = (c.dashActive > 0) ? 3.0 : 1.0;
 
-      // Combine: chase + separation + wobble
       const chaseX = dx / d;
       const chaseY = dy / d;
-      const spd = (c.speed + scoreSpeedBonus) * freezeSlow;
+      const spd = (c.speed + scoreSpeedBonus) * freezeSlow * angryBoost * dashBoost;
       const finalX = (chaseX + sepX * 0.6 + wobble * chaseY) * spd;
       const finalY = (chaseY + sepY * 0.6 - wobble * chaseX) * spd;
 
       c.setVelocity(finalX, finalY);
       c.setFlipX(dx < 0);
+    });
+
+    // ---- BOSS HP TEXT FOLLOW ----
+    if (this.boss && this.boss.active && this.boss.hpText) {
+      this.boss.hpText.setPosition(this.boss.x, this.boss.y - 60);
+    }
+
+    // ---- CHICKEN PROJECTILES MOVEMENT + CLEANUP ----
+    this.chickenProjs.getChildren().forEach(p => {
+      if (!p.active) return;
+      p.life -= delta;
+      if (p.life <= 0) p.destroy();
+    });
+
+    // ---- CARROT PROJECTILES MOVEMENT + CLEANUP ----
+    this.carrotProjs.getChildren().forEach(p => {
+      if (!p.active) return;
+      p.life -= delta;
+      p.angle += 12;
+      if (p.life <= 0) p.destroy();
     });
 
     // ---- GRASS (darker green) ----
