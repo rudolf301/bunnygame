@@ -584,6 +584,7 @@ class VersusScene extends Phaser.Scene {
   // ============================================================
   update(time, delta) {
     if (this.isOver) return;
+    if (typeof gamePaused !== 'undefined' && gamePaused) return;
 
     // Timers
     if (this.invTimer > 0) this.invTimer -= delta;

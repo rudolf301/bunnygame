@@ -2214,10 +2214,58 @@ function startVersusGame(data) {
   showScreen('game-screen');
 }
 
+function startEggFight(data) {
+  if (phaserGame) { phaserGame.destroy(true); phaserGame = null; }
+  document.getElementById('phaser-game').innerHTML = '';
+
+  const myName = document.getElementById('playerName').value.trim() || 'Player';
+  const oppPlayer = data.players.find(p => p.name !== myName);
+  const oppName = oppPlayer ? oppPlayer.name : 'Opponent';
+
+  phaserGame = new Phaser.Game({
+    type: Phaser.AUTO,
+    width: window.innerWidth,
+    height: window.innerHeight,
+    parent: 'phaser-game',
+    backgroundColor: '#5a3d1a',
+    physics: { default: 'arcade', arcade: { debug: false } },
+    scene: [EggFightScene],
+    fps: { target: 60 },
+    scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH },
+    render: { antialias: true },
+  });
+
+  // Pass data to scene via registry
+  phaserGame.registry.set('eggFightData', {
+    myName,
+    oppName,
+    playerIndex,
+  });
+
+  showScreen('game-screen');
+  // Hide HUD elements not needed for egg fight
+  document.getElementById('abilityBar').style.display = 'none';
+  document.getElementById('mpScores').style.display = 'none';
+  document.getElementById('carrotProgress').style.display = 'none';
+  document.getElementById('shieldIndicator').style.display = 'none';
+  document.getElementById('mobileJoystick').style.display = 'none';
+  const hud = document.querySelector('.game-hud');
+  if (hud) hud.style.display = 'none';
+}
+
 function stopGame() {
   if (phaserGame) { phaserGame.destroy(true); phaserGame = null; }
   document.getElementById('phaser-game').innerHTML = '';
   gamePaused = false;
+  // Restore HUD elements that egg fight may have hidden
+  document.getElementById('carrotProgress').style.display = '';
+  document.getElementById('shieldIndicator').style.display = '';
+  document.getElementById('mobileJoystick').style.display = '';
+  const hud = document.querySelector('.game-hud');
+  if (hud) hud.style.display = '';
+  // Clean up egg fight socket listeners
+  socket.off('egg-fight-result');
+  socket.off('egg-fight-over');
 }
 
 // Tutorial start button
@@ -2228,6 +2276,49 @@ document.getElementById('btnTutorialStart').addEventListener('click', () => {
   if (document.getElementById('skipTutorial').checked) {
     localStorage.setItem('skipTutorial', 'true');
   }
+});
+
+// ============================================================
+//  PAUSE (ESC)
+// ============================================================
+function togglePause() {
+  const pauseEl = document.getElementById('pause-overlay');
+  const gameScreen = document.getElementById('game-screen');
+  if (gameScreen.classList.contains('hidden')) return; // not in game
+  if (!phaserGame) return;
+
+  if (gamePaused) {
+    // Resume
+    gamePaused = false;
+    pauseEl.classList.add('hidden');
+  } else {
+    // Pause
+    gamePaused = true;
+    pauseEl.classList.remove('hidden');
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    togglePause();
+  }
+});
+
+document.getElementById('btnResume').addEventListener('click', () => {
+  ensureAudio(); SFX.click();
+  gamePaused = false;
+  document.getElementById('pause-overlay').classList.add('hidden');
+});
+
+document.getElementById('btnPauseMenu').addEventListener('click', () => {
+  ensureAudio(); SFX.click();
+  gamePaused = false;
+  document.getElementById('pause-overlay').classList.add('hidden');
+  stopGame();
+  socket.emit('leave-room');
+  showScreen('menu-screen');
+  loadLeaderboard(currentLbMode);
 });
 
 // ============================================================
@@ -2254,7 +2345,7 @@ document.getElementById('btnJoinRoom').addEventListener('click', () => {
 
 document.getElementById('btnRestart').addEventListener('click', () => {
   ensureAudio(); SFX.click();
-  if (gameMode === 'multi') { stopGame(); socket.emit('leave-room'); showScreen('menu-screen'); }
+  if (gameMode === 'multi' || gameMode === 'versus' || gameMode === 'eggfight') { stopGame(); socket.emit('leave-room'); showScreen('menu-screen'); }
   else startGame();
 });
 
@@ -2291,6 +2382,8 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
     const desc = document.getElementById('modeDesc');
     if (selectedMode === 'versus') {
       desc.textContent = '🐰 vs 🐔 One player is the bunny, one is the chicken! Best of 5 rounds, sides swap.';
+    } else if (selectedMode === 'eggfight') {
+      desc.textContent = '🥚💥 Easter egg tapping! Tap at the right moment for maximum power. Best of 5 rounds!';
     } else {
       desc.textContent = 'Both collect eggs - whoever gets more wins!';
     }
@@ -2369,14 +2462,26 @@ socket.on('versus-start', (data) => {
   showToast(`Round 1 - You are ${myRole === 'bunny' ? '🐰 Bunny' : '🐔 Chicken'}!`);
 });
 
+// Egg Fight mode start
+socket.on('eggfight-start', (data) => {
+  gameMode = 'eggfight';
+  startEggFight(data);
+  showToast('Egg Fight! 🥚💥');
+});
+
 socket.on('opponent-update', (d) => { opponentScore = d.score || 0; });
 socket.on('opponent-game-over', (d) => { opponentAlive = false; opponentScore = d.score || 0; showToast(`${opponentName} lost!`); });
 
 socket.on('opponent-left', () => {
   showToast(`${opponentName} left the game`);
   if (phaserGame) {
-    const sc = phaserGame.scene.getScene('GameScene');
-    if (sc && !sc.isGameOver) sc.doGameOver();
+    if (gameMode === 'eggfight') {
+      stopGame(); showScreen('menu-screen');
+    } else {
+      const sc = phaserGame.scene.getScene('GameScene');
+      if (sc && !sc.isGameOver) sc.doGameOver();
+      else { stopGame(); showScreen('menu-screen'); }
+    }
   } else showScreen('menu-screen');
 });
 

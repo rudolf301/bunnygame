@@ -105,6 +105,7 @@
         <div class="btn-group">
           <button class="btn btn-primary btn-small mode-btn active" data-mode="classic" id="modeClassic">🥚 Egg Race</button>
           <button class="btn btn-secondary btn-small mode-btn" data-mode="versus" id="modeVersus">🐰vs🐔 Bunny vs Chicken</button>
+          <button class="btn btn-secondary btn-small mode-btn" data-mode="eggfight" id="modeEggFight">🥚💥 Egg Fight</button>
         </div>
         <p id="modeDesc" style="font-size:0.8rem;color:#636e72;margin-top:0.5rem;">Both collect eggs - whoever gets more wins!</p>
       </div>
@@ -178,6 +179,19 @@
       </div>
     </div>
 
+    <!-- PAUSE OVERLAY -->
+    <div id="pause-overlay" class="tutorial-overlay hidden">
+      <div class="tutorial-card" style="max-width:340px;">
+        <h2>⏸️ Paused</h2>
+        <p style="color:#636e72;margin:0.6rem 0 1.2rem;">Game is paused</p>
+        <div class="btn-group" style="flex-direction:column;gap:0.5rem;">
+          <button class="btn btn-primary" id="btnResume">▶️ Resume</button>
+          <button class="btn btn-warning btn-small" id="btnPauseMenu">🏠 Back to Menu</button>
+        </div>
+        <p style="font-size:0.75rem;color:#b2bec3;margin-top:0.8rem;">Press ESC to resume</p>
+      </div>
+    </div>
+
     <!-- TUTORIAL OVERLAY -->
     <div id="tutorial-overlay" class="tutorial-overlay hidden">
       <div class="tutorial-card">
@@ -185,35 +199,51 @@
         <div class="tutorial-grid">
           <div class="tutorial-item">
             <div class="tutorial-icon">⬆️⬇️⬅️➡️</div>
-            <div class="tutorial-label">Arrows / WASD / Touch joystick</div>
+            <div class="tutorial-label"><strong>Move:</strong> Arrow keys, WASD, or touch joystick (mobile)</div>
           </div>
           <div class="tutorial-item">
             <div class="tutorial-icon">🥚</div>
-            <div class="tutorial-label">Collect eggs for points</div>
+            <div class="tutorial-label"><strong>Collect eggs</strong> scattered around the map for points</div>
           </div>
           <div class="tutorial-item">
             <div class="tutorial-icon">🐔</div>
-            <div class="tutorial-label">Avoid angry chickens!</div>
+            <div class="tutorial-label"><strong>Dodge chickens!</strong> They chase you and get faster each level</div>
           </div>
           <div class="tutorial-item">
             <div class="tutorial-icon">🥕</div>
-            <div class="tutorial-label">Carrot gives shield - crush chickens!</div>
+            <div class="tutorial-label"><strong>Carrots = Shield!</strong> Collect 5 for a shield that crushes chickens</div>
           </div>
           <div class="tutorial-item">
             <div class="tutorial-icon">🌟</div>
-            <div class="tutorial-label">Golden egg = 10 points!</div>
+            <div class="tutorial-label"><strong>Golden egg</strong> = 10 points! Grab it fast before it vanishes</div>
+          </div>
+          <div class="tutorial-item">
+            <div class="tutorial-icon">🔨 SPACE</div>
+            <div class="tutorial-label"><strong>Throw carrot!</strong> Press Space to launch a carrot at chickens</div>
           </div>
           <div class="tutorial-item">
             <div class="tutorial-icon">1️⃣2️⃣3️⃣4️⃣</div>
-            <div class="tutorial-label">Keys 1-4 or tap ability buttons</div>
+            <div class="tutorial-label"><strong>Abilities:</strong> 1=Freeze, 2=Shield, 3=Turbo, 4=Blast (keys or tap)</div>
           </div>
           <div class="tutorial-item">
             <div class="tutorial-icon">🔥</div>
-            <div class="tutorial-label">Collect fast for COMBO bonus!</div>
+            <div class="tutorial-label"><strong>Combo bonus!</strong> Collect eggs quickly for score multipliers</div>
           </div>
           <div class="tutorial-item">
             <div class="tutorial-icon">❤️❤️❤️</div>
-            <div class="tutorial-label">You have 3 lives - protect them!</div>
+            <div class="tutorial-label"><strong>3 lives</strong> - chickens take one life when they catch you</div>
+          </div>
+          <div class="tutorial-item">
+            <div class="tutorial-icon">🐔💨</div>
+            <div class="tutorial-label"><strong>Chicken attacks:</strong> Dash charge, egg throw, angry mode at combo x5</div>
+          </div>
+          <div class="tutorial-item">
+            <div class="tutorial-icon">👑</div>
+            <div class="tutorial-label"><strong>Boss chicken</strong> every 5 levels! Takes 3 hits to defeat</div>
+          </div>
+          <div class="tutorial-item">
+            <div class="tutorial-icon">⏸️ ESC</div>
+            <div class="tutorial-label"><strong>Pause game</strong> anytime with the ESC key</div>
           </div>
         </div>
         <button class="btn btn-primary tutorial-start" id="btnTutorialStart">Start Game!</button>
@@ -244,6 +274,7 @@
   <script src="hero-scene.js"></script>
   <script src="/socket.io/socket.io.js"></script>
   <script src="versus.js"></script>
+  <script src="egg-fight.js"></script>
   <script src="game.js"></script>
 </body>
 </html>

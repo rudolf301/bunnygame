@@ -120,7 +120,7 @@ io.on('connection', (socket) => {
   socket.on('set-mode', (mode) => {
     const room = rooms.get(socket.roomCode);
     if (!room) return;
-    room.mode = mode; // 'classic' or 'versus'
+    room.mode = mode; // 'classic', 'versus', or 'eggfight'
     io.to(socket.roomCode).emit('mode-set', mode);
   });
 
@@ -134,7 +134,12 @@ io.on('connection', (socket) => {
     if (room.players.length === 2 && room.players.every(x => x.ready)) {
       room.state = 'playing';
 
-      if (room.mode === 'versus') {
+      if (room.mode === 'eggfight') {
+        room.roundData = { round: 1, maxRounds: 5, scores: [0, 0], taps: {} };
+        io.to(socket.roomCode).emit('eggfight-start', {
+          players: room.players.map(p => ({ name: p.name })),
+        });
+      } else if (room.mode === 'versus') {
         // Assign roles: player 0 = bunny, player 1 = chicken (round 1)
         room.players[0].role = 'bunny';
         room.players[1].role = 'chicken';
@@ -245,6 +250,56 @@ io.on('connection', (socket) => {
     if (!room || !room.roundData) return;
     // If time runs out, chicken wins (bunny didn't collect enough)
     endVersusRound(room, 'chicken');
+  });
+
+  // ---- EGG FIGHT ----
+  socket.on('egg-fight-tap', ({ power }) => {
+    const room = rooms.get(socket.roomCode);
+    if (!room || !room.roundData) return;
+    const rd = room.roundData;
+    rd.taps[socket.id] = Math.max(0, Math.min(100, power));
+
+    // Both tapped?
+    if (room.players.length === 2 && room.players.every(p => rd.taps[p.id] !== undefined)) {
+      const p0pow = rd.taps[room.players[0].id];
+      const p1pow = rd.taps[room.players[1].id];
+      // Small random variance (±5) to keep it exciting
+      const r0 = p0pow + (Math.random() - 0.5) * 10;
+      const r1 = p1pow + (Math.random() - 0.5) * 10;
+
+      let winner;
+      if (Math.abs(r0 - r1) < 3) winner = -1; // draw
+      else winner = r0 > r1 ? 0 : 1;
+
+      if (winner >= 0) rd.scores[winner]++;
+      const roundsPlayed = rd.round;
+
+      // Check match over (first to 3 or 5 rounds played)
+      const matchOver = rd.scores[0] >= 3 || rd.scores[1] >= 3 || roundsPlayed >= rd.maxRounds;
+
+      io.to(room.code).emit('egg-fight-result', {
+        powers: [p0pow, p1pow],
+        winner,
+        scores: [...rd.scores],
+      });
+
+      if (matchOver) {
+        const mw = rd.scores[0] > rd.scores[1] ? 0 : rd.scores[1] > rd.scores[0] ? 1 : -1;
+        setTimeout(() => {
+          io.to(room.code).emit('egg-fight-over', {
+            scores: [...rd.scores],
+            winner: mw,
+            players: room.players.map(p => p.name),
+          });
+          room.state = 'waiting';
+          room.players.forEach(p => { p.ready = false; p.role = null; });
+          room.roundData = null;
+        }, 2500);
+      } else {
+        rd.round++;
+        rd.taps = {};
+      }
+    }
   });
 
   // ---- CLASSIC ----
