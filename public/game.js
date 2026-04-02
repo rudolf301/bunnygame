@@ -268,7 +268,7 @@ class GameScene extends Phaser.Scene {
     this.screenShakeTimer = 0;
     this.totalTime = 0;
     this.chickenSpawnCooldown = 0;
-    this.maxChickens = 8; // HARD CAP
+    this.maxChickens = 14; // HARD CAP
 
     // Half-heart pickup (spawns every 20s when score >= 100)
     this.heartPickupTimer = 0;
@@ -288,8 +288,17 @@ class GameScene extends Phaser.Scene {
     const W = this.scale.width;
     const H = this.scale.height;
 
+    // ---- FENCE: right side boundary (chickens come from there, eggs unreachable) ----
+    this.fenceX = Math.floor(W * 0.70);
+
     // Background
     this.add.rectangle(W / 2, H / 2, W, H, 0xc8e6a0);
+    // Right side danger zone tint
+    this.dangerZone = this.add.rectangle(
+      this.fenceX + (W - this.fenceX) / 2, H / 2,
+      W - this.fenceX, H, 0xe74c3c, 0.07
+    ).setDepth(0);
+
     for (let x = 0; x < W; x += 90) {
       for (let y = 0; y < H; y += 90) {
         this.add.circle(x + 45, y + 45, 32, 0xb8d890, 0.35);
@@ -303,9 +312,9 @@ class GameScene extends Phaser.Scene {
       this.grassTufts.push({ x: Phaser.Math.Between(0, W), y: Phaser.Math.Between(0, H), h: Phaser.Math.Between(6, 14) });
     }
 
-    // Flowers
-    for (let i = 0; i < 18; i++) {
-      const fx = Phaser.Math.Between(30, W - 30);
+    // Flowers (only in player zone)
+    for (let i = 0; i < 14; i++) {
+      const fx = Phaser.Math.Between(30, this.fenceX - 30);
       const fy = Phaser.Math.Between(30, H - 30);
       const fc = [0xff6b6b, 0xffd93d, 0x6c5ce7, 0xfd79a8, 0xffffff][i % 5];
       const petals = Phaser.Math.Between(4, 6);
@@ -327,6 +336,18 @@ class GameScene extends Phaser.Scene {
     this.chickens = this.physics.add.group();
     this.powerups = this.physics.add.group();
     this.hearts = this.physics.add.group();
+
+    // Terrain obstacles (collidable for bunny + chickens)
+    if (!this.textures.exists('blank_px')) {
+      const bg = this.make.graphics({ add: false });
+      bg.fillStyle(0xffffff); bg.fillRect(0, 0, 4, 4);
+      bg.generateTexture('blank_px', 4, 4); bg.destroy();
+    }
+    this.obstacles = this.physics.add.staticGroup();
+    this.obstacleGfxList = []; // graphics to clear on level change
+
+    // Fence graphics layer (drawn on top)
+    this.fenceGfx = this.add.graphics().setDepth(7);
     this.warnings = [];
 
     // Textures - create once, reuse
@@ -443,9 +464,20 @@ class GameScene extends Phaser.Scene {
     // ---- MOBILE TOUCH: ability tap handlers ----
     this.setupMobileControls();
 
+    // Fence static body (blocks player, not chickens)
+    this.fenceStaticBody = this.physics.add.staticImage(this.fenceX, H / 2, 'blank_px');
+    this.fenceStaticBody.setVisible(false);
+    this.fenceStaticBody.body.setSize(10, H);
+    this.fenceStaticBody.refreshBody();
+
+    // Draw initial fence
+    this.drawFence();
+    // Spawn initial level terrain
+    this.spawnLevelObstacles();
+
     // Spawn initial eggs
-    for (let i = 0; i < 5; i++) this.spawnEgg();
-    this.spawnChickenWithWarning();
+    for (let i = 0; i < 6; i++) this.spawnEgg();
+    for (let i = 0; i < 2; i++) this.spawnChickenWithWarning();
 
     // Overlaps
     this.physics.add.overlap(this.bunny, this.eggs, this.collectEgg, null, this);
@@ -453,6 +485,11 @@ class GameScene extends Phaser.Scene {
     this.physics.add.overlap(this.bunny, this.chickens, this.hitChicken, null, this);
     this.physics.add.overlap(this.bunny, this.powerups, this.collectPowerup, null, this);
     this.physics.add.overlap(this.bunny, this.hearts, this.collectHeart, null, this);
+
+    // Colliders: bunny hits fence + obstacles; chickens hit obstacles
+    this.physics.add.collider(this.bunny, this.fenceStaticBody);
+    this.physics.add.collider(this.bunny, this.obstacles);
+    this.physics.add.collider(this.chickens, this.obstacles);
 
     // Graphics layers
     this.warnGfx = this.add.graphics().setDepth(5);
@@ -644,7 +681,12 @@ class GameScene extends Phaser.Scene {
   // ============================================================
   spawnEgg() {
     const W = this.scale.width, H = this.scale.height;
-    const x = Phaser.Math.Between(40, W - 40);
+    const fX = this.fenceX || W;
+    // 35% chance egg spawns in the danger zone (right side - unreachable!)
+    const inDangerZone = Math.random() < 0.35;
+    const x = inDangerZone
+      ? Phaser.Math.Between(fX + 20, W - 20)
+      : Phaser.Math.Between(40, fX - 40);
     const y = Phaser.Math.Between(60, H - 60);
     const colorIdx = Phaser.Math.Between(0, EGG_COLORS.length - 1);
 
@@ -762,13 +804,21 @@ class GameScene extends Phaser.Scene {
     if (totalChickens >= this.maxChickens) return;
 
     const W = this.scale.width, H = this.scale.height;
-    const side = Phaser.Math.Between(0, 3);
+    const fX = this.fenceX || W;
+    // 50% chance chickens spawn from the right (fence zone) — they pass through fence
+    const side = Math.random() < 0.5 ? Phaser.Math.Between(0, 3) : 5;
     let sx, sy, wx, wy;
 
     if (side === 0) { sx = -30; sy = Phaser.Math.Between(60, H - 60); wx = 25; wy = sy; }
     else if (side === 1) { sx = W + 30; sy = Phaser.Math.Between(60, H - 60); wx = W - 25; wy = sy; }
     else if (side === 2) { sx = Phaser.Math.Between(60, W - 60); sy = -30; wx = sx; wy = 25; }
-    else { sx = Phaser.Math.Between(60, W - 60); sy = H + 30; wx = sx; wy = H - 25; }
+    else if (side === 3) { sx = Phaser.Math.Between(60, W - 60); sy = H + 30; wx = sx; wy = H - 25; }
+    else {
+      // From right zone (behind fence) — warning shows at fence edge
+      sx = Phaser.Math.Between(fX + 20, W - 20);
+      sy = Phaser.Math.Between(60, H - 60);
+      wx = fX + 5; wy = sy;
+    }
 
     this.warnings.push({ x: wx, y: wy, timer: 1500, max: 1500, sx, sy });
     SFX.chickenWarn();
@@ -776,7 +826,8 @@ class GameScene extends Phaser.Scene {
 
   actuallySpawnChicken(sx, sy) {
     // Respect dynamic cap
-    const dynamicMax = Math.min(3 + Math.floor(this.level / 2), this.maxChickens);
+    const scoreChickenBonus2 = Math.floor((this.score || 0) / 250);
+    const dynamicMax = Math.min(4 + Math.floor(this.level / 2) + scoreChickenBonus2, this.maxChickens);
     if (this.chickens.countActive() >= dynamicMax) return;
 
     // Add random offset so chickens don't spawn at same spot
@@ -1220,21 +1271,215 @@ class GameScene extends Phaser.Scene {
   }
 
   applyLevelTheme() {
-    // Tint the background based on level
     const tints = {
-      1: 0xc8e6a0, // default green
-      2: 0xc8e6a0,
-      3: 0xd4e8c0, // lighter spring
-      4: 0xa0c878, // forest
-      5: 0xb8c8a0, // mountain
-      6: 0x607080, // night
-      7: 0xd0e8f0, // winter
-      8: 0xc89070, // volcano
-      9: 0x506080, // starry
-      10: 0xe8d880, // golden
+      1:  0xc8e6a0, 2:  0xd4f0a0, 3:  0xa8dba8,
+      4:  0x9db88a, 5:  0xb0c4a0, 6:  0x1a1a2e,
+      7:  0xd8eaf8, 8:  0xb05030, 9:  0x2a1a40, 10: 0xe8d880,
     };
     const tint = tints[this.level] || 0xc8e6a0;
     this.cameras.main.setBackgroundColor(tint);
+    this.drawFence();
+    this.spawnLevelObstacles();
+  }
+
+  // ============================================================
+  //  FENCE VISUAL  (redrawn each level-up)
+  // ============================================================
+  drawFence() {
+    const H = this.scale.height;
+    const fx = this.fenceX;
+    if (!this.fenceGfx) return;
+    this.fenceGfx.clear();
+
+    const fenceStyles = {
+      1:  { post: 0x8b5e3c, plank: 0xb8845a, top: 0xd4a574 }, // wood
+      2:  { post: 0x6dad40, plank: 0x8bc34a, top: 0xa5d65a }, // hedge
+      3:  { post: 0x4a3728, plank: 0x6b5040, top: 0x5a4030 }, // dark wood (forest)
+      4:  { post: 0x707070, plank: 0x909090, top: 0xa0a0a0 }, // stone (mountain)
+      5:  { post: 0x2d1b4e, plank: 0x3d2b6e, top: 0x6040c0 }, // purple (night)
+      6:  { post: 0x8ab4d0, plank: 0xbde0f0, top: 0xffffff }, // icy (winter)
+      7:  { post: 0x703020, plank: 0x904020, top: 0xff6030 }, // lava (volcano)
+      8:  { post: 0x5a3080, plank: 0x8050b0, top: 0xc090ff }, // crystal (starry)
+      9:  { post: 0xb8860b, plank: 0xdaa520, top: 0xffd700 }, // golden (legend)
+    };
+    const s = fenceStyles[this.level] || fenceStyles[1];
+
+    // Post every 40px
+    for (let y = 0; y <= H; y += 40) {
+      this.fenceGfx.fillStyle(s.post, 1);
+      this.fenceGfx.fillRect(fx - 5, y, 10, 38);
+      this.fenceGfx.fillStyle(s.top, 1);
+      this.fenceGfx.fillRect(fx - 6, y, 12, 5);
+    }
+    // Two horizontal planks
+    this.fenceGfx.fillStyle(s.plank, 0.9);
+    this.fenceGfx.fillRect(fx - 3, 0, 6, H);
+    // Lighter stripe for 3D effect
+    this.fenceGfx.fillStyle(s.top, 0.4);
+    this.fenceGfx.fillRect(fx - 3, 0, 2, H);
+  }
+
+  // ============================================================
+  //  LEVEL TERRAIN OBSTACLES
+  // ============================================================
+  spawnLevelObstacles() {
+    // Clear old obstacles
+    this.obstacleGfxList.forEach(g => g.destroy());
+    this.obstacleGfxList = [];
+    this.obstacles.clear(true, true);
+
+    const W = this.scale.width, H = this.scale.height;
+    const fX = this.fenceX - 60; // obstacles stay in player zone
+
+    const place = (x, y, w, h) => {
+      const body = this.obstacles.create(x, y, 'blank_px');
+      body.setVisible(false);
+      body.body.setSize(w, h);
+      body.refreshBody();
+    };
+
+    // Helper: avoid center spawn area
+    const safeX = () => {
+      let x;
+      do { x = Phaser.Math.Between(60, fX); }
+      while (Math.abs(x - W / 2) < 80);
+      return x;
+    };
+    const safeY = () => {
+      let y;
+      do { y = Phaser.Math.Between(80, H - 60); }
+      while (Math.abs(y - H / 2) < 80);
+      return y;
+    };
+
+    const count = Math.min(2 + this.level, 9);
+
+    switch (this.level) {
+
+      case 2: // 🌸 Spring Garden - hedges / flower beds
+        for (let i = 0; i < count; i++) {
+          const x = safeX(), y = safeY();
+          const g = this.add.graphics().setDepth(2);
+          g.fillStyle(0x27ae60, 1); g.fillRoundedRect(x - 30, y - 10, 60, 20, 8);
+          g.fillStyle(0xff69b4, 0.8);
+          for (let j = 0; j < 6; j++) g.fillCircle(x - 22 + j * 9, y - 10, 6);
+          this.obstacleGfxList.push(g);
+          place(x, y, 60, 20);
+        }
+        break;
+
+      case 3: // 🌲 Forest - trees
+        for (let i = 0; i < count; i++) {
+          const x = safeX(), y = safeY();
+          const g = this.add.graphics().setDepth(2);
+          g.fillStyle(0x6b4c2a, 1); g.fillRect(x - 8, y, 16, 32);
+          g.fillStyle(0x2e7d32, 1); g.fillCircle(x, y - 8, 30);
+          g.fillStyle(0x388e3c, 0.7); g.fillCircle(x - 12, y + 4, 18);
+          g.fillStyle(0x1b5e20, 0.6); g.fillCircle(x + 10, y + 2, 16);
+          this.obstacleGfxList.push(g);
+          place(x, y - 2, 28, 50);
+        }
+        break;
+
+      case 4: // 🏔️ Mountain - boulders
+        for (let i = 0; i < count; i++) {
+          const x = safeX(), y = safeY();
+          const g = this.add.graphics().setDepth(2);
+          g.fillStyle(0x78909c, 1); g.fillEllipse(x, y, 60, 40);
+          g.fillStyle(0xb0bec5, 0.6); g.fillEllipse(x - 10, y - 8, 25, 16);
+          g.fillStyle(0x546e7a, 0.5); g.fillEllipse(x + 14, y + 6, 20, 12);
+          this.obstacleGfxList.push(g);
+          place(x, y, 55, 36);
+        }
+        break;
+
+      case 5: // 🌙 Night - mushroom clusters
+        for (let i = 0; i < count; i++) {
+          const x = safeX(), y = safeY();
+          const g = this.add.graphics().setDepth(2);
+          g.fillStyle(0xe8e0d0, 1); g.fillRect(x - 5, y, 10, 22);
+          g.fillStyle(0xc62828, 1); g.fillEllipse(x, y, 34, 20);
+          g.fillStyle(0xffffff, 0.7);
+          g.fillCircle(x - 8, y - 2, 4); g.fillCircle(x + 4, y - 4, 3); g.fillCircle(x + 10, y, 3);
+          // Small ones
+          g.fillStyle(0xe8e0d0, 1); g.fillRect(x + 18, y + 4, 6, 14);
+          g.fillStyle(0xad1457, 1); g.fillEllipse(x + 22, y + 4, 20, 12);
+          this.obstacleGfxList.push(g);
+          place(x, y + 10, 50, 30);
+        }
+        break;
+
+      case 6: // ❄️ Winter - snow drifts + mini-mountains
+        for (let i = 0; i < count; i++) {
+          const x = safeX(), y = safeY();
+          const g = this.add.graphics().setDepth(2);
+          // Mini snowy mountain
+          g.fillStyle(0x9e9e9e, 1);
+          g.fillTriangle(x, y - 45, x - 38, y + 10, x + 38, y + 10);
+          g.fillStyle(0xffffff, 0.9);
+          g.fillTriangle(x, y - 45, x - 20, y - 16, x + 20, y - 16);
+          g.fillStyle(0xb0c8e0, 0.5); // snow base
+          g.fillEllipse(x, y + 10, 70, 18);
+          this.obstacleGfxList.push(g);
+          place(x, y - 10, 60, 55);
+        }
+        break;
+
+      case 7: // 🌋 Volcano - lava rocks
+        for (let i = 0; i < count; i++) {
+          const x = safeX(), y = safeY();
+          const g = this.add.graphics().setDepth(2);
+          g.fillStyle(0x3e2723, 1); g.fillEllipse(x, y, 55, 35);
+          g.fillStyle(0xbf360c, 0.8); g.fillEllipse(x - 12, y - 5, 22, 14);
+          g.fillStyle(0xff6d00, 0.5); g.fillEllipse(x + 10, y + 4, 16, 10);
+          g.fillStyle(0xff8f00, 0.3); g.fillCircle(x - 5, y - 8, 6);
+          this.obstacleGfxList.push(g);
+          place(x, y, 50, 30);
+        }
+        break;
+
+      case 8: // ⭐ Starry Sky - crystal formations
+        for (let i = 0; i < count; i++) {
+          const x = safeX(), y = safeY();
+          const g = this.add.graphics().setDepth(2);
+          const cols = [0x9c27b0, 0x3f51b5, 0x00bcd4];
+          for (let c = 0; c < 3; c++) {
+            const ox = [-14, 0, 12][c], h2 = [38, 52, 32][c];
+            g.fillStyle(cols[c], 0.85);
+            g.fillTriangle(x + ox, y - h2, x + ox - 8, y + 6, x + ox + 8, y + 6);
+            g.fillStyle(0xffffff, 0.3);
+            g.fillTriangle(x + ox, y - h2, x + ox - 3, y - h2 + 12, x + ox + 3, y - h2 + 12);
+          }
+          this.obstacleGfxList.push(g);
+          place(x, y - 10, 44, 58);
+        }
+        break;
+
+      default: // 👑 Legend (9+) - mix of everything
+        for (let i = 0; i < count; i++) {
+          const x = safeX(), y = safeY();
+          const type = i % 4;
+          const g = this.add.graphics().setDepth(2);
+          if (type === 0) {
+            g.fillStyle(0x2e7d32); g.fillCircle(x, y - 8, 28);
+            g.fillStyle(0x6b4c2a); g.fillRect(x - 7, y, 14, 28);
+          } else if (type === 1) {
+            g.fillStyle(0x78909c); g.fillEllipse(x, y, 52, 34);
+            g.fillStyle(0xb0bec5, 0.5); g.fillEllipse(x - 8, y - 7, 22, 14);
+          } else if (type === 2) {
+            g.fillStyle(0x3e2723); g.fillEllipse(x, y, 48, 30);
+            g.fillStyle(0xff6d00, 0.6); g.fillEllipse(x, y - 4, 20, 12);
+          } else {
+            g.fillStyle(0x9c27b0, 0.85);
+            g.fillTriangle(x, y - 46, x - 12, y + 4, x + 12, y + 4);
+            g.fillStyle(0xce93d8, 0.4);
+            g.fillTriangle(x, y - 46, x - 4, y - 30, x + 4, y - 30);
+          }
+          this.obstacleGfxList.push(g);
+          place(x, y, 46, 44);
+        }
+        break;
+    }
   }
 
   doGameOver() {
@@ -1554,20 +1799,17 @@ class GameScene extends Phaser.Scene {
     }
 
     // ---- SPAWNING ----
-    // Eggs: cap at reasonable amount
-    const maxEggs = Math.min(3 + this.level, 12);
+    // Eggs: more eggs on screen as levels grow (both zones)
+    const maxEggs = Math.min(4 + this.level, 14);
     while (this.eggs.countActive() < maxEggs) this.spawnEgg();
 
-    // Chickens: cooldown-based, scales slower, hard cap
-    // Max chickens: level + score bonus, hard capped
-    const scoreChickenBonus = Math.floor(this.score / 300); // +1 chicken per 300 score
-    const dynamicMaxChickens = Math.min(3 + Math.floor(this.level / 2) + scoreChickenBonus, this.maxChickens);
+    // Chickens: cooldown-based, hard cap via actuallySpawnChicken
     this.chickenSpawnCooldown -= delta;
-    if (this.chickenSpawnCooldown <= 0 && this.chickens.countActive() < dynamicMaxChickens) {
-      // Cooldown shrinks with level AND score (min 3s in hard mode, 5s normal)
-      const scoreSpeedUp = Math.min(2000, Math.floor(this.score / 100) * 200);
-      const minCooldown = Math.max(this.score >= 200 ? 3000 : 5000, 10000 - this.level * 600 - scoreSpeedUp);
-      this.chickenSpawnCooldown = minCooldown + Math.random() * 3000;
+    if (this.chickenSpawnCooldown <= 0) {
+      // Cooldown shrinks with level AND score (min 2.5s in hard mode, 4s normal)
+      const scoreSpeedUp = Math.min(2500, Math.floor(this.score / 80) * 200);
+      const minCooldown = Math.max(this.score >= 200 ? 2500 : 4000, 9000 - this.level * 600 - scoreSpeedUp);
+      this.chickenSpawnCooldown = minCooldown + Math.random() * 2500;
       this.spawnChickenWithWarning();
     }
 
